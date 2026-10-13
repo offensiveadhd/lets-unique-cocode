@@ -9,8 +9,14 @@
     "session": { "type": "string", "description": "The saved session's id. Added by the engine when it stores the handoff; not sent by the page." },
     "label": { "type": "string", "minLength": 1, "description": "The first non-empty line (at most 60 characters) plus the language, e.g. \"for each user in users · pseudo\". The saved session's summary." },
     "intent": {
-      "enum": ["auto", "ask", "explain", "do", "fix", "review", "note"],
-      "description": "What the human picked in the select: auto means you decide. Present on cocode.export, absent on the cocode.snapshot reply."
+      "enum": ["auto", "ask", "explain", "do", "fix", "review", "note", "output"],
+      "description": "What the human picked in the select: auto means you decide; output is the Answer in code button (the whole answer comes back as code in answer.lang). Present on cocode.export, absent on the cocode.snapshot reply."
+    },
+    "answer": {
+      "type": "object",
+      "description": "Present when intent is output: the language the answer must be written in (the chip's language, pseudo included).",
+      "required": ["lang"],
+      "properties": { "lang": { "$ref": "#/$defs/lang" } }
     },
     "text": { "$ref": "#/$defs/text" },
     "truncated": { "type": "boolean", "description": "true when text was longer than 64 000 characters; the tail is kept." },

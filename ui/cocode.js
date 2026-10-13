@@ -41,7 +41,7 @@ const TAIL = 2000;
 const PREFS_KEY = 'lets.cocode';
 const DRAFT_KEY = 'lets.cocode.draft';
 const TARGETS = ['auto', 'python', 'javascript', 'typescript', 'bash', 'go', 'rust'];
-const INTENTS = ['auto', 'ask', 'explain', 'do', 'fix', 'review', 'note'];
+const INTENTS = ['auto', 'ask', 'explain', 'do', 'fix', 'review', 'note', 'output'];
 const KINDS = ['note', 'ok', 'warn', 'error'];
 const EXEC = ['python', 'javascript', 'typescript'];   // permissions.exec in unique.json
 const OUT_MAX = 100000;                  // characters of stdout / stderr / system kept per run entry
@@ -805,12 +805,14 @@ function onChange({ delta, source }) {
   btnUndo.disabled = !ed.canUndo;
   btnRedo.disabled = !ed.canRedo;
 }
-function snapshotPayload(withIntent) {
+function snapshotPayload(withIntent, intentOverride = null) {
   const text = ed.text;
   const first = text.split('\n').find((l) => l.trim()) || '';
+  const intent = intentOverride || (INTENTS.includes(intentSel.value) ? intentSel.value : 'auto');
   const out = {
-    label: `${preview(first, 60) || 'empty'} · ${L.name}`,
-    ...(withIntent ? { intent: INTENTS.includes(intentSel.value) ? intentSel.value : 'auto' } : {}),
+    label: `${preview(first, 60) || 'empty'} · ${L.name}${intent === 'output' ? ' · answer as code' : ''}`,
+    ...(withIntent ? { intent } : {}),
+    ...(withIntent && intent === 'output' ? { answer: { lang: L.name } } : {}),      // the language the answer must be written in
     text: text.length > TEXT_MAX ? text.slice(-TEXT_MAX) : text,
     ...(text.length > TEXT_MAX ? { truncated: true } : {}),
     lang: L.name, detected: L.detected, rev: ed.rev, cursor: ed.getCursor(), selection: ed.getSelection(),
@@ -887,6 +889,21 @@ function sendToClaude() {
   toast('Sent to Claude.', 'ok', 2200);
   react('cheer');
   awayToast('Doto is away. Claude reads this with your next message in Claude Code.');
+}
+
+/**
+ * "Answer in code": the same handoff as Send to Claude, with intent "output" and the chip's
+ * language as the answer's language. Claude replies in the transcript with code only.
+ */
+function answerInCode() {
+  if (!ed.text.trim()) { toast('Nothing to answer yet.', 'info', 1800); return; }
+  emitChanged.flush();
+  lets.emitNow('cocode.export', snapshotPayload(true, 'output'));
+  recordRecent();
+  if (lets.status !== 'open') { toast('Not connected to the lets host. The code is kept and sent when the connection is back.', 'warn', 4500); return; }
+  toast(`Sent. The answer comes back as ${L.name}.`, 'ok', 2200);
+  react('cheer');
+  awayToast('Doto is away. Claude answers with your next message in Claude Code.');
 }
 
 function recordRecent() {
@@ -1100,6 +1117,7 @@ function quickSuggestions() {
     { id: 'cocode.explain', label: sel ? 'Explain the selection' : 'Explain this line', run: () => once('cocode.explain', () => sendAsk(sel ? 'Explain the selection' : `Explain line ${ed.getCursor().line}`, 'menu')) },
     { id: 'cocode.run', label: 'Run it', hint: 'Ctrl+Enter', run: () => once('cocode.run', doRun) },
     { id: 'cocode.build', label: 'Show the real code', run: () => once('cocode.build', () => { openPane('build'); if (!build) requestBuild('auto'); }) },
+    { id: 'cocode.answer', label: 'Answer in code', hint: `the whole answer as ${L.name}`, run: () => once('cocode.answer', answerInCode) },
     { id: 'cocode.chat', label: 'Open chat', run: () => once('cocode.chat', () => { try { shell.chat?.open?.(); } catch { /* optional */ } }) },
   ];
 }
@@ -1174,6 +1192,7 @@ function onKeyDown(e) {
   if (e.key === 'Escape') { if (closeOverlays()) e.preventDefault(); return; }
   if (consentOpen()) { if (mod && e.key === 'Enter') e.preventDefault(); return; }   // the card is modal: only its buttons and Esc
   if (mod && e.key === 'Enter') { e.preventDefault(); if (e.shiftKey) sendToClaude(); else doRun(); return; }
+  if (mod && e.shiftKey && !e.altKey && e.key.toLowerCase() === 'o') { e.preventDefault(); answerInCode(); return; }
   if (mod && !e.shiftKey && !e.altKey && e.key.toLowerCase() === 'k') { e.preventDefault(); openAsk(); return; }
   if (e.altKey && !mod && e.key === '\\') { e.preventDefault(); requestGhost('key'); return; }
   if (mod && !e.shiftKey && !e.altKey && e.key.toLowerCase() === 'b') { e.preventDefault(); togglePane('build'); return; }
@@ -1223,6 +1242,7 @@ $('toolbar').addEventListener('click', (e) => {
     case 'run': doRun(); break;
     case 'ask': if (askForm.hidden) openAsk(); else closeAsk(); break;
     case 'send': sendToClaude(); break;
+    case 'answer': answerInCode(); break;
     case 'undo': ed.undo(); ed.focus(); break;
     case 'redo': ed.redo(); ed.focus(); break;
     case 'build': togglePane('build'); break;

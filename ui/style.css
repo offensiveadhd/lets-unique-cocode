@@ -301,3 +301,7 @@ html, body { margin: 0; height: 100%; overflow: hidden; background: var(--lets-b
   .pill::before { animation: none; opacity: 1; }
   .seed, .gmark, .pane-toggle svg, .glow { transition: none; }
 }
+
+/* Answer in code: the second handoff button */
+.tb-answer { border-color: rgba(107, 240, 255, .35); color: var(--lets-accent-3); }
+.tb-answer:hover { background: rgba(107, 240, 255, .1); color: var(--lets-accent-3); }
