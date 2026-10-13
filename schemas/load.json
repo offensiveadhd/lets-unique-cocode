@@ -104,6 +104,14 @@
             "failed"
           ]
         },
+        "source": {
+          "enum": [
+            "claude",
+            "local"
+          ],
+          "default": "claude",
+          "description": "Kept as saved. local: the editor's text, as written (the window rebuilds it when its runner can run the chip's language); claude: a cocode.build."
+        },
         "file": {
           "type": "string"
         },
@@ -159,6 +167,17 @@
             "integer",
             "null"
           ]
+        },
+        "sandbox": {
+          "type": "string",
+          "description": "A run on this machine: the local runner's isolation level, shown as a badge."
+        },
+        "killed": {
+          "enum": [
+            "timeout",
+            "output"
+          ],
+          "description": "A local run the runner killed: the pill reads timeout or output cap."
         },
         "stdout": {
           "type": "string"

@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://lets.dev/schemas/uniques/cocode/run.json",
   "title": "cocode.run (event)",
-  "description": "Run pressed (Ctrl+Enter). Run the build if build.rev equals rev, otherwise build for this rev first, then stream cocode.output with this run id and close it with done:true.",
+  "description": "Run pressed (Ctrl+Enter) and the window could not run it on this machine itself: the engine has no local runner (or it is off), the build is missing, still building or in a language the runner does not run here, the human chose Not now on the consent card, or the runner was busy or the language unavailable (the same run id then carries a system line saying so). Run the build if build.rev equals rev, otherwise build for this rev first, then stream cocode.output with this run id and close it with done:true. A window that ran it itself sends cocode.ran instead.",
   "type": "object",
   "required": ["run", "rev", "text", "lang"],
   "properties": {
@@ -19,7 +19,8 @@
         "rev": { "$ref": "#/$defs/rev" },
         "lang": { "$ref": "#/$defs/lang" },
         "code": { "type": "string", "description": "The real program. May be empty while status is building or failed." },
-        "status": { "enum": ["building", "ready", "failed"] }
+        "status": { "enum": ["building", "ready", "failed"] },
+        "source": { "enum": ["claude", "local"], "description": "claude: your cocode.build. local: the editor's text, as written." }
       }
     }
   },

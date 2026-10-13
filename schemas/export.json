@@ -73,6 +73,7 @@
         "lang": { "$ref": "#/$defs/lang" },
         "code": { "type": "string", "description": "The real program. May be empty while status is building or failed." },
         "status": { "enum": ["building", "ready", "failed"] },
+        "source": { "enum": ["claude", "local"], "default": "claude", "description": "claude: sent with cocode.build. local: the editor's text, as written, for a language the engine's local runner runs on this machine." },
         "file": { "type": "string" },
         "notes": { "type": "string" },
         "at": { "type": "integer", "minimum": 0, "description": "Epoch milliseconds when the build arrived." }
@@ -88,9 +89,11 @@
         "lang": { "$ref": "#/$defs/lang" },
         "at": { "type": "integer", "minimum": 0, "description": "Epoch milliseconds when the run started." },
         "ms": { "type": ["integer", "null"], "minimum": 0, "description": "Duration; null until the run is closed." },
-        "exit": { "type": ["integer", "null"], "description": "Exit code; null until the run is closed." },
-        "stdout": { "type": "string", "maxLength": 2000, "description": "Output tail." },
-        "stderr": { "type": "string", "maxLength": 2000, "description": "Output tail." },
+        "exit": { "type": ["integer", "null"], "description": "Exit code; null until the run is closed, and for a local run the runner killed." },
+        "sandbox": { "type": "string", "description": "Only for a run on this machine: the local runner's isolation level (audit-hook, node-permission)." },
+        "killed": { "enum": ["timeout", "output"], "description": "Only for a local run the runner killed: its time limit or its output cap." },
+        "stdout": { "type": "string", "maxLength": 2001, "description": "Output tail: the last 2 000 characters, with a leading … when cut." },
+        "stderr": { "type": "string", "maxLength": 2001, "description": "Output tail: the last 2 000 characters, with a leading … when cut." },
         "status": { "enum": ["running", "done", "failed", "lost"], "description": "lost = no output for 60 s." }
       }
     },

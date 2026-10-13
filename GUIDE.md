@@ -22,14 +22,20 @@ A ghost is shown only while the text before the caret still matches, so always c
 
 `cocode.build {rev, lang, code, status, file?, notes?}` is the real, runnable program for that `rev`. Pick the language: the human's target (a `cocode.build.request` with `target` ≠ `auto`, or a chip that names a real language) or, for pseudo-code, Python unless the dialect is clearly JS-like. Make it self-contained: sample data where input is implied, prints for what the program computes, nothing interactive, no network, no writes outside the working folder. Send `status:"building"` first when it will take a moment, then `ready`. Keep building ahead quietly while the human types: a ready build is what makes Run fast. The pane marks older builds *stale* by itself; just send a new one.
 
+**As written.** For python, javascript and typescript the window's runner makes the text itself the build (`source:"local"`). Build those only to improve on the text (sample data, a fix); yours replaces it.
+
 ## Run
 
-`cocode.run {run, rev, text, lang, build?}`: execute now.
+With the engine's local runner (and the human's OK) the window runs the build itself and sends `cocode.ran`; otherwise `cocode.run`.
+
+**`cocode.ran {run, rev, buildRev, lang, sandbox, exit, ms, timedOut, killed, stdout, stderr}`**: already ran, output shown. One Doto line: "Ran it. Exit 0, 3 lines." On a failure (exit ≠ 0, `timedOut`, `killed`), say why in one line, offer the fix as a ghost or an annotation, and send a corrected `cocode.build`. Never run it again yourself.
+
+**`cocode.run {run, rev, text, lang, build?}`**: the window could not run it (no runner, another language, *Not now*, busy). Execute now:
 
 1. If `build.rev === rev`, run it. Otherwise build for this `rev` (send the `cocode.build` too), then run.
-2. Write the file into your scratch folder and run it with your own tools, 30 s timeout, no network, no sudo, no deletes. If the program would touch files outside that folder or needs secrets, stop and ask one short question in chat.
-3. Stream the result: `cocode.output {run, stream:"stdout", text, seq:1}`, … then `{run, stream:"stdout", text:"", done:true, exit:0, ms:420}`. Errors go to `stream:"stderr"`; "building first…" to `stream:"system"`. Always close the run with `done:true`.
-4. One Doto line: "Ran it. Exit 0, 3 lines." or "Failed on line 4. See Output." If it failed because the human's intent was unclear, say what you assumed and offer the fix as a ghost or an annotation, not a rewrite.
+2. One call to the engine's `run` tool: `run {lang, code, to:"<windowId>", run:"<id>", emit:"cocode.output"}`. It runs sandboxed and streams `cocode.output` into the window, closing the run: no files, no shell. `windowId`: your `open` result, or the event's `from` after `#`.
+3. A language the tool does not run (bash, go, …): write the file into your scratch folder, run it with your own tools (30 s, no network, no sudo, no deletes) and stream `cocode.output {run, stream, text, seq}` yourself, closing with `{done:true, exit, ms}`. If the program would touch files outside that folder or needs secrets, ask one short question in chat first.
+4. One Doto line, as above. Unclear intent: say what you assumed; offer the fix as a ghost or an annotation, not a rewrite.
 
 ## Talking in code
 
@@ -73,4 +79,4 @@ Every command animates and accepts `"ack": true`. Prefer `insert` and `replace` 
 
 ## The companion on this page
 
-Doto sits by the caret. Point at a line with `entity.move {"to":"[data-line=\"4\"]"}` and say one line ("This loop never ends."). The gutter rows are `[data-line="<n>"]`. The page already plays its own reactions: a wink on an accepted ghost, a nod when a build lands, a cheer on exit 0, an oops on a failed run. Don't add a second one for the same action.
+Doto sits by the caret. Point at a line with `entity.move {"to":"[data-line=\"4\"]"}` and say one line ("This loop never ends."). The gutter rows are `[data-line="<n>"]`. The page already plays its own reactions: a wink on an accepted ghost, a nod when your build lands, a cheer on exit 0, an oops on a failed run. Don't add a second one for the same action.
