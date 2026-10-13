@@ -56,6 +56,10 @@
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m4 11.5 16-7-6.5 16-2.5-6.5z"/><path d="m11 14 9-9.5"/></svg>
           <span>Send to Claude</span>
         </button>
+        <button type="button" class="tb-btn tb-text tb-answer" id="btn-answer" data-act="answer" title="Send it and get the whole answer as code in this language, nothing else (Ctrl+Shift+O)" aria-label="Answer in code">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m8 7-4.5 5L8 17"/><path d="m16 7 4.5 5L16 17"/><path d="M13.5 5 10.5 19"/></svg>
+          <span>Answer in code</span>
+        </button>
       </div>
 
       <div class="tb-group tb-end" role="group" aria-label="Panels">
@@ -192,6 +196,7 @@
       <dt>Ctrl+K</dt><dd>ask about this line or selection</dd>
       <dt>?? …</dt><dd>a line starting with ?? asks when you press Enter</dd>
       <dt>Ctrl+Shift+Enter</dt><dd>send to Claude</dd>
+      <dt>Ctrl+Shift+O</dt><dd>send it and get the whole answer as code</dd>
       <dt>Ctrl+Z · Ctrl+Y</dt><dd>undo · redo</dd>
       <dt>Ctrl+D · Alt+↑↓</dt><dd>duplicate · move lines</dd>
       <dt>Ctrl+;</dt><dd>comment the line</dd>
