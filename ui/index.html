@@ -163,6 +163,7 @@
         <header class="pane-head">
           <h2 id="h-output"><button type="button" class="pane-toggle" aria-expanded="true" aria-controls="body-output"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m8 10 4 4 4-4"/></svg><span>Output</span></button></h2>
           <span class="pill" id="run-pill" data-state="none">—</span>
+          <span class="runner" id="runner-badge" data-state="off" title="No local runner: this engine has none, it is switched off, or it did not answer.&#10;Run goes through Claude.">local: off</span>
           <div class="pane-tools">
             <button type="button" class="lets-btn lets-btn-sm lets-btn-ghost" id="btn-clear-runs" title="Clear finished runs">Clear</button>
           </div>
@@ -200,6 +201,18 @@
       <dt>Ctrl+/</dt><dd>chat with Claude</dd>
     </dl>
   </section>
+
+  <div id="consent" class="consent-wrap" hidden>
+    <section id="consent-card" class="consent glass" role="dialog" aria-modal="true" aria-labelledby="consent-title" aria-describedby="consent-body" tabindex="-1">
+      <h2 id="consent-title">Run on this machine?</h2>
+      <div id="consent-body" class="consent-body"></div>
+      <p class="consent-foot">Claude's own runs are not affected. <span class="lets-dim">Not now hands this run to Claude, as before.</span></p>
+      <div class="consent-actions">
+        <button type="button" class="lets-btn lets-btn-ghost" id="consent-no">Not now</button>
+        <button type="button" class="lets-btn lets-btn-primary" id="consent-yes">Allow on this machine</button>
+      </div>
+    </section>
+  </div>
 
   <div id="d-toast" class="d-toast" role="status" aria-live="polite"></div>
   <div id="sr-live" class="sr-only" aria-live="polite"></div>

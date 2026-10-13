@@ -101,6 +101,14 @@
           "items": {
             "type": "string"
           }
+        },
+        "exec": {
+          "type": "array",
+          "description": "Languages the unique may ask the host runner to execute on the human's behalf (python, javascript, typescript); see docs/RUNNER.md.",
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9+#._-]{0,23}$"
+          }
         }
       },
       "additionalProperties": false

@@ -5,15 +5,18 @@
  * (`cocode.suggest`), prepares the real program in the background
  * (`cocode.build`) so Run is instant, runs it (`cocode.run` → `cocode.output`),
  * and reads what they send as a message written in code (`cocode.ask`,
- * `cocode.export`). Contract: CONTRACT.md. Everything non-cocode (companion,
- * chat, components, toasts) is the shell's job (/sdk/lets-shell.js); this file
- * only plugs into it.
+ * `cocode.export`). When the engine has a local runner (lets 0.7.0+, consent
+ * first), Run executes python and javascript on this machine itself and tells
+ * Claude afterwards (`cocode.ran`). Contract: CONTRACT.md. Everything
+ * non-cocode (companion, chat, components, toasts) is the shell's job
+ * (/sdk/lets-shell.js); this file only plugs into it.
  *
- *   1. constants & helpers      6. ghost & local predictor
- *   2. boot                     7. build & output panes
- *   3. state                    8. outgoing events (changed, run, ask, send)
- *   4. language chip            9. incoming commands
- *   5. seeds & empty state     10. companion, chrome, keyboard, start-up
+ *   1. constants & helpers      7. build & output panes
+ *   2. boot                     8. local runner (info, consent, as-written builds, run)
+ *   3. state                    9. outgoing events (changed, run, ask, send)
+ *   4. language chip           10. incoming commands
+ *   5. seeds & empty state     11. companion, chrome, keyboard, start-up
+ *   6. ghost & local predictor
  */
 
 import { Lets } from '/sdk/lets-client.js';
@@ -23,7 +26,7 @@ import { predict } from './predict.js';
 
 // ───────────────────────────── 1. constants & helpers ─────────────────────────────
 
-const VERSION = '0.1.0';
+const VERSION = '0.2.0';
 const CAPS = ['entity', 'chat', 'components', 'clipboard'];
 const CHANGED_MS = 500;
 const LOCAL_MS = 250;
@@ -40,12 +43,24 @@ const DRAFT_KEY = 'lets.cocode.draft';
 const TARGETS = ['auto', 'python', 'javascript', 'typescript', 'bash', 'go', 'rust'];
 const INTENTS = ['auto', 'ask', 'explain', 'do', 'fix', 'review', 'note'];
 const KINDS = ['note', 'ok', 'warn', 'error'];
+const EXEC = ['python', 'javascript', 'typescript'];   // permissions.exec in unique.json
+const OUT_MAX = 100000;                  // characters of stdout / stderr / system kept per run entry
+const RAN_TAIL = 4000;                   // output tails in cocode.ran
+const RUN_GRACE = 15000;                 // ms past the run's own limit before the window gives up on the engine's stream
+/** Names a chip or a build may use for a language the engine runs, mapped to the runner's name. */
+const RUN_ALIASES = { py: 'python', python3: 'python', js: 'javascript', node: 'javascript', mjs: 'javascript', ts: 'typescript' };
+/** Each sandbox in the consent card's words (docs/RUNNER.md §2 in the lets repo). Unknown levels are named as the engine names them. */
+const SANDBOXES = {
+  'audit-hook': { name: 'Python audit hook', stops: 'blocks files outside that folder, sockets and subprocesses' },
+  'node-permission': { name: 'Node permission model', stops: 'blocks files outside that folder and child processes, but not the network' },
+};
 const REDUCED = matchMedia('(prefers-reduced-motion: reduce)');
 const NARROW = matchMedia('(max-width: 1100px)');
 
 const $ = (id) => document.getElementById(id);
 const isObj = (v) => v != null && typeof v === 'object' && !Array.isArray(v);
 const int = (v, d = null) => (Number.isFinite(+v) ? Math.floor(+v) : d);
+const intOrNull = (v) => (v == null ? null : int(v));            // int() reads null as 0; exit, ms and buildRev keep their null
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const isEditable = (el) => !!el && (el.isContentEditable || el.tagName === 'TEXTAREA' || el.tagName === 'SELECT'
   || (el.tagName === 'INPUT' && !/^(button|checkbox|radio|range|submit|reset|file|color|image)$/i.test(el.type)));
@@ -53,6 +68,7 @@ const plural = (n, one, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
 const preview = (s, n) => { const t = String(s ?? '').replace(/\s+/g, ' ').trim(); return t.length > n ? `${t.slice(0, n - 1)}…` : t; };
 const tail = (s, n) => { const t = String(s ?? ''); return t.length > n ? `…${t.slice(-n)}` : t; };
 const validColor = (c) => typeof c === 'string' && c.length < 64 && CSS.supports('color', c);
+const fmtBytes = (b) => (b >= 1048576 ? `${+(b / 1048576).toFixed(1)} MB` : `${Math.max(1, Math.round(b / 1024))} KB`);
 
 /** Creates an element. attrs: class, text, on<event> functions; anything else is an attribute. */
 function h(tag, attrs, ...kids) {
@@ -146,6 +162,12 @@ const runsEmpty = $('runs-empty');
 const notesEl = $('notes');
 const notesList = $('notes-list');
 const btnClearRuns = $('btn-clear-runs');
+const runnerBadge = $('runner-badge');
+const consentEl = $('consent');
+const consentCard = $('consent-card');
+const consentBody = $('consent-body');
+const btnAllow = $('consent-yes');
+const btnNotNow = $('consent-no');
 const stPos = $('st-pos');
 const stLines = $('st-lines');
 const stRev = $('st-rev');
@@ -158,10 +180,20 @@ const dToast = $('d-toast');
 
 /** @type {{name:string, detected:boolean}} */
 const L = { name: 'pseudo', detected: true };
-/** @type {null|{rev:number, lang:string, code:string, status:string, file:string|null, notes:string|null, at:number}} */
+/** source: "claude" (cocode.build) or "local" (the editor's text, as written, for a language the runner runs here).
+ * @type {null|{rev:number, lang:string, code:string, status:string, source:'local'|'claude', file:string|null, notes:string|null, at:number}} */
 let build = null;
-/** @type {Array<{id:string, rev:number, buildRev:number|null, lang:string, at:number, status:string, stdout:string, stderr:string, system:string, exit:number|null, ms:number|null, lost:number}>} */
+/** The last build Claude sent, kept when an as-written build takes the pane: late stream chunks are checked against it. */
+let lastClaude = null;
+/** sandbox: the runner's isolation level for a local run (null for Claude's runs); killed: null | "timeout" | "output".
+ * @type {Array<{id:string, rev:number, buildRev:number|null, lang:string, at:number, status:string, stdout:string, stderr:string, system:string, exit:number|null, ms:number|null, lost:number, sandbox:string|null, killed:string|null, local:boolean, refused:boolean}>} */
 const runs = [];
+/** The engine's local runner (GET /lip/run/info), or null when the engine has none or it could not be read.
+ * @type {null|{enabled:boolean, allowed:boolean, exec:string[]|null, languages:Object<string, {ok:boolean, version:string|null, sandbox:string|null}>, limits:{timeoutMs:number, outputBytes:number, concurrent:number}}} */
+let runner = null;
+let runnerSeq = 0;
+/** Where focus goes back to when the consent card closes. */
+let consentBack = null;
 /** @type {Map<number, {kind:string, text:string}>} */
 const annotations = new Map();
 const stats = { accepted: 0, rejected: 0, acceptedLocal: 0 };
@@ -201,6 +233,7 @@ function setLang(name, detected) {
   showLang();
   ed.render();
   renderBuild();
+  asWritten();
 }
 let lastDetect = '';
 function redetect(force) {
@@ -209,7 +242,7 @@ function redetect(force) {
   if (!force && t === lastDetect) return;
   lastDetect = t;
   const r = detect(t);
-  if (r.lang !== L.name) { L.name = r.lang; showLang(); ed.render(); }
+  if (r.lang !== L.name) { L.name = r.lang; showLang(); ed.render(); asWritten(); }
 }
 function openLangForm() {
   langForm.hidden = false;
@@ -311,16 +344,18 @@ function buildState() {
 }
 function renderBuild() {
   const st = buildState();
+  const asw = build?.source === 'local' ? ' · as written' : '';
   buildPill.dataset.state = st;
-  buildPill.textContent = st === 'none' ? '—' : st === 'ready' ? `ready · rev ${build.rev}` : st === 'stale' ? `stale · rev ${build.rev}` : st === 'building' ? 'building…' : 'failed';
+  buildPill.textContent = st === 'none' ? '—' : st === 'ready' ? `ready · rev ${build.rev}${asw}` : st === 'stale' ? `stale · rev ${build.rev}${asw}` : st === 'building' ? 'building…' : 'failed';
+  buildPill.title = asw ? 'Your text, run as written on this machine. Claude replaces it when it builds something better.' : '';
   buildEmpty.hidden = !!build;
   buildMeta.hidden = !build;
   buildCode.hidden = !build || !build.code;
   buildNotes.hidden = !build || !build.notes;
   btnCopy.disabled = !build || !build.code;
-  if (!build) return;
+  if (!build) { updateStatus(); return; }
   buildMeta.textContent = '';
-  buildMeta.append(h('span', { class: 'badge', text: build.lang }), ` · rev ${build.rev}`, build.file ? h('span', null, ' · ', h('code', { text: build.file })) : '', st === 'stale' ? ` · the editor is at rev ${ed.rev}` : '');
+  buildMeta.append(h('span', { class: 'badge', text: build.lang }), ` · rev ${build.rev}`, asw, build.file ? h('span', null, ' · ', h('code', { text: build.file })) : '', st === 'stale' ? ` · the editor is at rev ${ed.rev}` : '');
   if (build.code) fillCode(buildCode, build.code, build.lang);
   buildCode.classList.toggle('stale', st === 'stale');
   if (build.notes) buildNotes.textContent = build.notes;
@@ -333,9 +368,18 @@ function renderRuns() {
   const open = runs.filter((r) => r.status === 'running').length;
   const last = runs[runs.length - 1];
   runPill.dataset.state = open ? 'running' : last ? (last.status === 'done' ? 'ok' : last.status === 'lost' ? 'lost' : 'failed') : 'none';
-  runPill.textContent = open ? `running · ${open}` : last ? (last.status === 'done' ? `ok · exit 0` : last.status === 'lost' ? 'no answer yet' : last.status === 'failed' ? `failed · exit ${last.exit ?? '?'}` : last.status) : '—';
+  runPill.textContent = open ? `running · ${open}` : last ? (last.status === 'done' ? `ok · exit 0` : last.status === 'lost' ? 'no answer yet' : last.status === 'failed' ? `failed · ${runPillOf(last)[1]}` : last.status) : '—';
   for (const r of [...runs].reverse()) runsEl.append(runArticle(r));
   updateStatus();
+}
+/** A run entry's pill: [data-state, text]. A local run killed by a limit says which one. */
+function runPillOf(r) {
+  if (r.status === 'running') return ['running', 'running…'];
+  if (r.status === 'done') return ['ok', `exit ${r.exit ?? 0}`];
+  if (r.status === 'lost') return ['lost', 'lost'];
+  if (r.killed === 'timeout') return ['failed', 'timeout'];
+  if (r.killed === 'output') return ['failed', 'output cap'];
+  return ['failed', r.exit != null ? `exit ${r.exit}` : r.refused ? 'not run' : 'exit ?'];
 }
 function runOutput(r) {
   const pre = h('pre', { class: 'lets-pre run-out' });
@@ -345,29 +389,40 @@ function runOutput(r) {
   if (!r.system && !r.stdout && !r.stderr) pre.append(h('span', { class: 'out-sys lets-dim', text: r.status === 'running' ? 'waiting for output…' : r.status === 'lost' ? 'no answer yet' : '(no output)' }));
   return pre;
 }
+function runHead(r) {
+  const [state, text] = runPillOf(r);
+  const sbx = r.sandbox ? SANDBOXES[r.sandbox]?.name || r.sandbox : '';
+  return h('header', { class: 'run-head' },
+    h('span', { class: 'run-id', text: r.id }),
+    h('span', { class: 'badge', text: r.lang }),
+    r.sandbox ? h('span', { class: 'badge badge-local', text: `local · ${r.sandbox}`, title: `Ran on this machine (${sbx})` }) : null,
+    h('span', { class: 'lets-dim', text: `rev ${r.rev}${r.buildRev != null && r.buildRev !== r.rev ? ` · build ${r.buildRev}` : ''}` }),
+    h('span', { class: 'pill', 'data-state': state, text }),
+    r.ms != null ? h('span', { class: 'lets-dim', text: `${r.ms} ms` }) : null);
+}
 function runArticle(r) {
-  return h('article', { class: 'run', 'data-status': r.status, 'data-run': r.id, 'aria-label': `Run ${r.id}` },
-    h('header', { class: 'run-head' },
-      h('span', { class: 'run-id', text: r.id }),
-      h('span', { class: 'badge', text: r.lang }),
-      h('span', { class: 'lets-dim', text: `rev ${r.rev}${r.buildRev != null && r.buildRev !== r.rev ? ` · build ${r.buildRev}` : ''}` }),
-      h('span', { class: 'pill', 'data-state': r.status === 'done' ? 'ok' : r.status === 'running' ? 'running' : r.status, text: r.status === 'running' ? 'running…' : r.status === 'done' ? `exit ${r.exit ?? 0}` : r.status === 'failed' ? `exit ${r.exit ?? '?'}` : r.status }),
-      r.ms != null ? h('span', { class: 'lets-dim', text: `${r.ms} ms` }) : null),
-    runOutput(r));
+  return h('article', { class: 'run', 'data-status': r.status, 'data-run': r.id, 'aria-label': `Run ${r.id}` }, runHead(r), runOutput(r));
 }
 /** Update one run in place (a streamed chunk): keeps the pane's scroll and the other entries untouched. */
 function renderRun(r) {
   const el = runsEl.querySelector(`[data-run="${CSS.escape(r.id)}"]`);
   if (!el) { renderRuns(); return; }
   el.dataset.status = r.status;
+  el.querySelector('.run-head')?.replaceWith(runHead(r));
   const pre = el.querySelector('.run-out');
   const stick = pre && pre.scrollTop + pre.clientHeight >= pre.scrollHeight - 4;
   const next = runOutput(r);
   if (pre) pre.replaceWith(next); else el.append(next);
   if (stick) next.scrollTop = next.scrollHeight;
-  const pill = el.querySelector('.pill');
-  if (pill) { pill.dataset.state = r.status === 'done' ? 'ok' : r.status; pill.textContent = r.status === 'running' ? 'running…' : r.status === 'lost' ? 'lost' : pill.textContent; }
   updateStatus();
+}
+/** renderRun at most every 50 ms: a local run can stream thousands of small chunks. A timer, not a frame:
+ * the app's browser pane stops animation frames while it is hidden, and the output should still be there. */
+const painting = new Set();
+function paintRun(r) {
+  if (painting.has(r)) return;
+  painting.add(r);
+  setTimeout(() => { painting.delete(r); if (runs.includes(r)) renderRun(r); }, 50);
 }
 /** (Re)arm the 60 s "no answer yet" timer of a running run. */
 function armLost(r) {
@@ -388,6 +443,17 @@ function renderNotes() {
 }
 
 function findRun(id) { return runs.find((r) => r.id === id) || null; }
+/** A new run entry (status running) for build `b`; `id` defaults to the window's own r_<rev>_<n>. */
+function runEntry(b, id = `r_${ed.rev}_${++runSeq}`) {
+  return { id, rev: ed.rev, buildRev: b ? b.rev : null, lang: b?.lang || L.name, at: Date.now(), status: 'running', stdout: '', stderr: '', system: '', exit: null, ms: null, lost: 0, sandbox: null, killed: null, local: false, refused: false };
+}
+/** Puts a run at the top of the Output pane (at most RUNS_MAX entries; running ones are never dropped). */
+function addRun(r) {
+  runs.push(r);
+  while (runs.length > RUNS_MAX) { const i = runs.findIndex((x) => x.status !== 'running'); if (i < 0) break; runs.splice(i, 1); }
+  renderRuns();
+  openPane('output');
+}
 function finishRun(r, status, exit, ms) {
   clearTimeout(r.lost);
   r.status = status;
@@ -452,7 +518,260 @@ function requestBuild(target) {
   awayToast('Doto is away. Claude prepares it with your next message in Claude Code.');
 }
 
-// ───────────────────────────── 8. outgoing events ─────────────────────────────
+// ───────────────────────────── 8. local runner ─────────────────────────────
+// lets 0.7.0+ can run python and javascript itself (docs/RUNNER.md in the lets repo). GET /lip/run/info says what
+// this machine runs and whether the human allowed cocode here; POST /lip/run/consent records that OK (the engine
+// keeps it, the window remembers nothing); POST /lip/run streams one run as NDJSON. An older engine (404), a
+// refusal or any error leaves `runner` null, and every Run goes to Claude as before.
+
+const lipUrl = (path) => `${lets.base || ''}${path}?w=${encodeURIComponent(lets.windowId)}`;
+/** POST JSON to a /lip/* endpoint with the window's token. */
+function postLip(path, body, signal) {
+  return fetch(lipUrl(path), { method: 'POST', headers: { 'content-type': 'application/json', 'x-lets-token': lets.token }, body: JSON.stringify(body), signal });
+}
+/** True when the engine reports a version older than 0.7.0: it has no runner, so the window skips the request (and its 404). */
+function engineBeforeRunner(v) {
+  const m = /^(\d+)\.(\d+)\.\d+/.exec(String(v || ''));
+  return !!m && +m[1] === 0 && +m[2] < 7;
+}
+
+/** The info answer, cleaned. Anything missing is read the safe way: not enabled, not allowed, nothing available. */
+function readRunner(d) {
+  if (!isObj(d)) return null;
+  const languages = Object.create(null);
+  if (isObj(d.languages)) {
+    for (const [k, v] of Object.entries(d.languages)) {
+      const name = cleanLang(k);
+      if (name && isObj(v)) languages[name] = { ok: v.ok === true, version: typeof v.version === 'string' ? v.version.slice(0, 40) : null, sandbox: typeof v.sandbox === 'string' && v.sandbox ? v.sandbox.slice(0, 40) : null };
+    }
+  }
+  const lim = isObj(d.limits) ? d.limits : {};
+  const max = Math.max(1000, int(lim.maxTimeoutMs, 120000));
+  return {
+    enabled: d.enabled === true,
+    allowed: d.allowed === true,
+    exec: Array.isArray(d.exec) ? d.exec.map(cleanLang).filter(Boolean) : null,
+    languages,
+    limits: { timeoutMs: clamp(int(lim.timeoutMs, 30000), 1000, max), outputBytes: Math.max(1024, int(lim.outputBytes, 1048576)), concurrent: Math.max(1, int(lim.concurrent, 2)) },
+  };
+}
+/** (Re)reads GET /lip/run/info: on every lip.hello (boot and each reconnect), after consent and after a refusal. */
+async function fetchRunner() {
+  const seq = ++runnerSeq;
+  let next = null;
+  if (!engineBeforeRunner(lets.hello?.hostVersion) && typeof lets.get === 'function') {
+    try { next = readRunner(await lets.get(`/lip/run/info?w=${encodeURIComponent(lets.windowId)}`)); } catch { next = null; }   // 404: no runner; 403: switched off
+  }
+  if (seq !== runnerSeq) return;                                  // a newer request answers instead
+  runner = next;
+  renderRunner();
+  makeLocalBuild();
+}
+
+/** The runner's name for a chip or build language when this machine runs it for cocode, else ''. */
+function runnableLang(lang) {
+  if (!runner || !runner.enabled) return '';
+  const name = Object.hasOwn(RUN_ALIASES, lang) ? RUN_ALIASES[lang] : lang;
+  return Object.hasOwn(runner.languages, name) && runner.languages[name].ok && (runner.exec || EXEC).includes(name) ? name : '';
+}
+/** The languages Run executes on this machine, in the engine's order. */
+function runnableList() { return runner ? Object.keys(runner.languages).filter((n) => runnableLang(n) === n) : []; }
+
+/** The badge in the Output pane header: what Run does here. Its title names each language's sandbox. */
+function renderRunner() {
+  const list = runnableList();
+  const state = list.length ? (runner.allowed ? 'on' : 'ask') : 'off';
+  runnerBadge.dataset.state = state;
+  runnerBadge.textContent = state === 'on' ? `local: ${list.join(' · ')}` : state === 'ask' ? 'local: needs your OK' : 'local: off';
+  const lines = [];
+  if (state === 'off') {
+    lines.push(!runner ? 'No local runner: this engine has none, it is switched off, or it did not answer.' : !runner.enabled ? 'The local runner is switched off (runner.enabled in ~/.lets/config.json).' : 'None of the languages cocode may run is available on this machine.', 'Run goes through Claude.');
+  } else {
+    for (const [n, l] of Object.entries(runner.languages)) {
+      if (!(runner.exec || EXEC).includes(n)) continue;
+      lines.push(l.ok ? `${n}${l.version ? ` ${l.version}` : ''}: ${l.sandbox ? `${l.sandbox} sandbox` : 'no sandbox'}` : `${n}: not available here`);
+    }
+    lines.push(state === 'ask' ? 'Run asks once before anything runs here.' : 'Run executes these on this machine; anything else goes through Claude.');
+  }
+  runnerBadge.title = lines.join('\n');
+}
+
+/** The window's own build: when the chip names a language the runner runs here, the text itself is the program.
+ * Claude's build for this rev (or a newer one) wins, and Claude's next cocode.build replaces this one. */
+function makeLocalBuild() {
+  const text = ed.text;
+  if (!runnableLang(L.name) || !text.trim()) {
+    // the chip moved on (or the text is gone): an as-written build no longer stands for the document
+    if (build?.source === 'local' && (build.lang !== L.name || !text.trim())) { build = null; renderBuild(); }
+    return;
+  }
+  if (build?.source === 'claude' && build.rev >= ed.rev) return;
+  if (build?.source === 'local' && build.rev === ed.rev && build.lang === L.name) return;
+  build = { rev: ed.rev, lang: L.name, code: text, status: 'ready', source: 'local', file: null, notes: null, at: Date.now() };
+  renderBuild();
+}
+const asWritten = debounce(makeLocalBuild, CHANGED_MS);
+
+// ── consent card ──
+
+function consentOpen() { return !consentEl.hidden; }
+/** "Run on this machine?": built from the info answer (where it runs, the limits, what each sandbox stops). */
+function openConsent() {
+  if (!runner) { runViaClaude(); return; }
+  const lim = runner.limits;
+  const groups = new Map();
+  for (const n of runnableList()) { const s = runner.languages[n].sandbox || ''; groups.set(s, [...(groups.get(s) || []), n]); }
+  consentBody.textContent = '';
+  consentBody.append(
+    h('p', { text: `Run asks the lets engine to run your program as you, on this computer, in a temporary folder under ~/.lets/run/jobs that is deleted afterwards. A run stops after ${Math.round(lim.timeoutMs / 1000)} s or ${fmtBytes(lim.outputBytes)} of output.` }),
+    h('ul', { class: 'consent-langs' }, [...groups].map(([s, langs]) => h('li', null, h('b', { text: langs.join(', ') }),
+      s ? ` · ${SANDBOXES[s]?.name || `the "${s}" sandbox`}${SANDBOXES[s] ? `: ${SANDBOXES[s].stops}` : ''}.` : ' · no sandbox: it runs unrestricted.'))),
+    h('p', { class: 'lets-dim', text: 'It is not a virtual machine: CPU and memory are not capped. The engine remembers this OK for cocode on this machine.' }),
+  );
+  consentBack = document.activeElement instanceof HTMLElement && document.activeElement !== document.body ? document.activeElement : null;
+  for (const el of [$('topbar'), $('work')]) el.inert = true;
+  consentEl.hidden = false;
+  consentCard.focus({ preventScroll: true });
+}
+function closeConsent() {
+  if (consentEl.hidden) return;
+  consentEl.hidden = true;
+  for (const el of [$('topbar'), $('work')]) el.inert = false;
+  const back = consentBack;
+  consentBack = null;
+  if (back?.isConnected) back.focus({ preventScroll: true }); else ed.focus();
+}
+/** Allow on this machine: the engine records it, the window re-reads the info and runs. */
+async function allowHere() {
+  btnAllow.disabled = btnNotNow.disabled = true;
+  let ok = false;
+  let why = '';
+  try {
+    const res = await postLip('/lip/run/consent', { allow: true });
+    const body = await res.json().catch(() => null);
+    ok = res.ok && body?.allowed === true;
+    if (!ok) why = typeof body?.message === 'string' && body.message.trim() ? body.message : `the engine answered ${res.status}`;
+  } catch (err) { why = err?.message || 'no answer'; }
+  btnAllow.disabled = btnNotNow.disabled = false;
+  closeConsent();
+  if (!ok) { toast(`Could not save your OK (${preview(why, 120)}). Claude runs it instead.`, 'warn', 4500); fetchRunner(); runViaClaude(); return; }
+  if (runner) runner.allowed = true;
+  renderRunner();
+  fetchRunner();
+  doRun();
+}
+btnAllow.addEventListener('click', allowHere);
+btnNotNow.addEventListener('click', () => { closeConsent(); runViaClaude(); });
+consentEl.addEventListener('click', (e) => { if (e.target === consentEl) closeConsent(); });   // the backdrop: like Esc, runs nothing
+consentEl.addEventListener('keydown', (e) => {                                                // keep Tab inside the card
+  if (e.key !== 'Tab') return;
+  e.preventDefault();
+  const f = [btnNotNow, btnAllow];
+  const i = f.indexOf(document.activeElement);
+  f[i < 0 ? (e.shiftKey ? f.length - 1 : 0) : (i + (e.shiftKey ? f.length - 1 : 1)) % f.length].focus();
+});
+
+// ── one local run ──
+
+/** Runs build `b` on this machine (POST /lip/run) and streams the NDJSON answer into a new run entry. */
+async function runLocal(b, lang) {
+  const going = runs.filter((x) => x.local && x.status === 'running').length;
+  if (going >= runner.limits.concurrent) { toast(going === 1 ? 'Still running. Wait for it to finish.' : `${going} runs are still going. Wait for one to finish.`, 'info', 2400); return; }
+  const r = runEntry(b);
+  r.local = true;
+  r.lang = lang;
+  r.sandbox = runner.languages[lang]?.sandbox || null;
+  addRun(r);
+  const timeoutMs = runner.limits.timeoutMs;
+  const ctl = new AbortController();
+  const guard = setTimeout(() => ctl.abort(), timeoutMs + RUN_GRACE);
+  try {
+    let res;
+    try { res = await postLip('/lip/run', { lang, code: b.code, run: r.id, timeoutMs }, ctl.signal); } catch { handOver(r, b, 'The engine did not answer.'); return; }
+    if (!res.ok) { await refused(r, b, res); return; }
+    try { await readRun(r, res); } catch { if (r.status === 'running') engineGone(r, ctl.signal.aborted ? 'The engine stopped answering.' : "The run's output broke off."); }
+    if (r.status === 'running') engineGone(r, 'The run ended without a result.');
+  } finally {
+    clearTimeout(guard);
+  }
+}
+/** Reads the NDJSON stream line by line (a chunk may end mid-line). */
+async function readRun(r, res) {
+  const reader = res.body.getReader();
+  const dec = new TextDecoder();
+  let buf = '';
+  for (;;) {
+    const { value, done } = await reader.read();
+    buf += done ? dec.decode() : dec.decode(value, { stream: true });
+    let nl;
+    while ((nl = buf.indexOf('\n')) >= 0) { runLine(r, buf.slice(0, nl)); buf = buf.slice(nl + 1); }
+    if (done) { runLine(r, buf); return; }
+  }
+}
+/** One NDJSON line: {run, stream, text} appends; {done:true, exit, ms, timedOut, killed, sandbox} closes the run. */
+function runLine(r, line) {
+  const s = line.trim();
+  if (!s || r.status !== 'running') return;
+  let m;
+  try { m = JSON.parse(s); } catch { return; }
+  if (!isObj(m)) return;
+  if (m.done === true) { finishLocal(r, m); return; }
+  if (!['stdout', 'stderr', 'system'].includes(m.stream) || typeof m.text !== 'string' || !m.text) return;
+  r[m.stream] = (r[m.stream] + m.text).slice(-OUT_MAX);
+  paintRun(r);
+}
+/** The done line: close the entry, react, record a recent, and tell Claude what happened (cocode.ran). */
+function finishLocal(r, m) {
+  const killed = m.killed === 'timeout' || m.killed === 'output' ? m.killed : m.timedOut === true ? 'timeout' : null;
+  const exit = intOrNull(m.exit);                                 // null when the process was killed
+  if (typeof m.sandbox === 'string' && m.sandbox) r.sandbox = m.sandbox.slice(0, 40);
+  r.killed = killed;
+  finishRun(r, exit === 0 && !killed ? 'done' : 'failed', exit, Math.max(0, intOrNull(m.ms) ?? Date.now() - r.at));
+  renderRuns();
+  openPane('output');
+  react(r.status === 'done' ? 'cheer' : 'oops');
+  recordRecent();
+  lets.emitNow('cocode.ran', { run: r.id, rev: r.rev, buildRev: r.buildRev, lang: r.lang, sandbox: r.sandbox, exit: r.exit, ms: r.ms, timedOut: killed === 'timeout', killed, stdout: tail(r.stdout, RAN_TAIL), stderr: tail(r.stderr, RAN_TAIL) });
+}
+/** A 4xx before the process started ({error, message}): consent → the card; unavailable or busy → Claude; else say so. */
+async function refused(r, b, res) {
+  const body = await res.json().catch(() => null);
+  const code = typeof body?.error === 'string' ? body.error : '';
+  const message = typeof body?.message === 'string' && body.message.trim() ? preview(body.message, 200) : `The engine did not run it (${code || res.status}).`;
+  if (code === 'consent') {
+    runs.splice(runs.indexOf(r), 1);
+    renderRuns();
+    if (runner) runner.allowed = false;
+    renderRunner();
+    openConsent();
+    return;
+  }
+  fetchRunner();
+  if (code === 'unavailable' || code === 'busy') { handOver(r, b, message); return; }
+  r.refused = true;
+  r.system += `${message}\n`;
+  finishRun(r, 'failed', null, null);
+  renderRuns();
+  toast(message, 'warn', 4500);
+}
+/** The engine could not run it: the same entry goes to Claude as today's cocode.run. */
+function handOver(r, b, why) {
+  r.local = false;
+  r.sandbox = null;
+  r.system += `${why} Claude runs it instead.\n`;
+  toast(`${why} Claude runs it instead.`, 'warn', 4500);
+  renderRun(r);
+  runViaClaude(r, b);
+}
+/** The stream broke or never closed: the entry fails; no event (nothing ran to completion). */
+function engineGone(r, why) {
+  r.system += `${why}\n`;
+  finishRun(r, 'failed', null, Date.now() - r.at);
+  renderRuns();
+  toast(why, 'warn');
+}
+
+// ───────────────────────────── 9. outgoing events ─────────────────────────────
 
 const emitChanged = debounce(() => {
   const by = changedBy || 'human';
@@ -478,6 +797,7 @@ function onChange({ delta, source }) {
   emitChanged();
   if (by === 'human') localGhost();
   redetect(false);
+  asWritten();
   renderSeeds();
   renderBuild();
   updateStatus();
@@ -496,25 +816,33 @@ function snapshotPayload(withIntent) {
     lang: L.name, detected: L.detected, rev: ed.rev, cursor: ed.getCursor(), selection: ed.getSelection(),
     stats: { ...stats },
   };
-  if (build) out.build = { rev: build.rev, lang: build.lang, code: build.code, status: build.status, file: build.file || undefined, notes: build.notes || undefined };
-  if (runs.length) out.runs = runs.slice(-3).map((r) => ({ id: r.id, rev: r.rev, buildRev: r.buildRev, lang: r.lang, at: r.at, ms: r.ms, exit: r.exit, status: r.status, stdout: tail(r.stdout, TAIL), stderr: tail(r.stderr, TAIL) }));
+  if (build) out.build = { rev: build.rev, lang: build.lang, code: build.code, status: build.status, source: build.source, file: build.file || undefined, notes: build.notes || undefined };
+  if (runs.length) out.runs = runs.slice(-3).map((r) => ({ id: r.id, rev: r.rev, buildRev: r.buildRev, lang: r.lang, at: r.at, ms: r.ms, exit: r.exit, status: r.status, sandbox: r.sandbox || undefined, killed: r.killed || undefined, stdout: tail(r.stdout, TAIL), stderr: tail(r.stderr, TAIL) }));
   if (annotations.size) out.annotations = [...annotations.entries()].sort((a, b) => a[0] - b[0]).map(([line, a]) => ({ line, kind: a.kind, text: a.text }));
   return out;
 }
 
+/** Run (button, Ctrl+Enter, Doto's "Run it"): on this machine when the runner can run the build, else through Claude. */
 function doRun() {
+  if (consentOpen()) return;
   if (lets.status !== 'open') { toast('Not connected to the lets host. Nothing can run.', 'warn', 4000); return; }
   if (!ed.text.trim()) { toast('Nothing to run yet.', 'info', 1800); return; }
   emitChanged.flush();
-  const id = `r_${ed.rev}_${++runSeq}`;
-  const r = { id, rev: ed.rev, buildRev: build ? build.rev : null, lang: build?.lang || L.name, at: Date.now(), status: 'running', stdout: '', stderr: '', system: '', exit: null, ms: null, lost: 0 };
+  asWritten.cancel();
+  makeLocalBuild();
+  const b = build;
+  // a ready build in a language this machine runs (stale or not: it is fast); a build still streaming goes to Claude
+  const lang = b && b.status === 'ready' && b.code.trim() ? runnableLang(b.lang) : '';
+  if (!lang) { runViaClaude(); return; }
+  if (!runner.allowed) { openConsent(); return; }
+  runLocal(b, lang);
+}
+/** Today's path: cocode.run to Claude with the latest build; Claude streams cocode.output into the entry. `r` reuses an entry the runner handed over. */
+function runViaClaude(r = null, b = build) {
+  if (!r) { r = runEntry(b); addRun(r); }
   armLost(r);
-  runs.push(r);
-  while (runs.length > RUNS_MAX) { const i = runs.findIndex((x) => x.status !== 'running'); if (i < 0) break; runs.splice(i, 1); }
-  renderRuns();
-  openPane('output');
-  const payload = { run: id, rev: ed.rev, text: ed.text.slice(0, TEXT_MAX), lang: L.name };
-  if (build) payload.build = { rev: build.rev, lang: build.lang, code: build.code, status: build.status };
+  const payload = { run: r.id, rev: ed.rev, text: ed.text.slice(0, TEXT_MAX), lang: L.name };
+  if (b) payload.build = { rev: b.rev, lang: b.lang, code: b.code, status: b.status, source: b.source };
   lets.emitNow('cocode.run', payload);
   recordRecent();
   awayToast('Doto is away. The run starts with your next message in Claude Code.');
@@ -569,7 +897,7 @@ function recordRecent() {
   savePrefs();
 }
 
-// ───────────────────────────── 9. incoming commands ─────────────────────────────
+// ───────────────────────────── 10. incoming commands ─────────────────────────────
 
 const COMMANDS = {
   'cocode.suggest': (d, msg) => {
@@ -608,14 +936,16 @@ const COMMANDS = {
     const status = ['building', 'ready', 'failed'].includes(d.status) ? d.status : 'ready';
     let code = typeof d.code === 'string' ? d.code : '';
     if (d.seq != null) {
-      // a late chunk after the build for this rev was already closed is ignored, so it cannot replace a finished build
-      if (!buildStream && build && build.rev === rev && build.status !== 'building') return;
+      // a late chunk after Claude's build for this rev was already closed is ignored, so it cannot replace a finished build
+      if (!buildStream && lastClaude && lastClaude.rev === rev && lastClaude.status !== 'building') return;
       if (buildStream && buildStream.rev === rev) buildStream.code += code; else buildStream = { rev, code };
       code = buildStream.code;
       if (d.done) buildStream = null;
     } else buildStream = null;
-    const was = build && build.rev === rev ? build.status : null;
-    build = { rev, lang, code, status, file: typeof d.file === 'string' ? d.file.slice(0, 120) : null, notes: typeof d.notes === 'string' ? d.notes.slice(0, 2000) : null, at: Date.now() };
+    const was = build && build.source === 'claude' && build.rev === rev ? build.status : null;
+    // Claude's build always replaces the window's as-written one
+    build = { rev, lang, code, status, source: 'claude', file: typeof d.file === 'string' ? d.file.slice(0, 120) : null, notes: typeof d.notes === 'string' ? d.notes.slice(0, 2000) : null, at: Date.now() };
+    lastClaude = { rev, status };
     renderBuild();
     if (status === 'ready' && was !== 'ready' && (d.seq == null || d.done)) react('nod');
     if (status === 'failed') openPane('build');
@@ -627,7 +957,8 @@ const COMMANDS = {
     let created = false;
     if (!r) {
       // a run Claude named itself: same entry and the same 60 s "no answer yet" timer as a window-made run
-      r = { id, rev: ed.rev, buildRev: null, lang: build?.lang || L.name, at: Date.now(), status: 'running', stdout: '', stderr: '', system: '', exit: null, ms: null, lost: 0 };
+      r = runEntry(null, id);
+      r.lang = build?.lang || L.name;
       armLost(r);
       runs.push(r);
       created = true;
@@ -635,7 +966,7 @@ const COMMANDS = {
     if (r.status === 'lost') r.status = 'running';
     const stream = ['stdout', 'stderr', 'system'].includes(d.stream) ? d.stream : 'stdout';
     const text = typeof d.text === 'string' ? d.text : '';
-    if (text) { r[stream] = (r[stream] + text).slice(-100000); armLost(r); }
+    if (text) { r[stream] = (r[stream] + text).slice(-OUT_MAX); armLost(r); }
     if (d.done) {
       const exit = int(d.exit, r.stderr ? 1 : 0);
       finishRun(r, exit === 0 ? 'done' : 'failed', exit, int(d.ms));
@@ -695,9 +1026,17 @@ const COMMANDS = {
     if (d.lang) setLang(d.lang, d.detected === true); else { L.detected = true; lastDetect = ''; redetect(true); showLang(); }
     build = null;
     // the saved build was made for the saved rev: re-base it on this window's rev (fresh if it matched, stale otherwise)
-    if (isObj(d.build) && int(d.build.rev) != null && cleanLang(d.build.lang)) build = { rev: int(d.rev) == null || int(d.build.rev) === int(d.rev) ? ed.rev : ed.rev - 1, lang: cleanLang(d.build.lang), code: typeof d.build.code === 'string' ? d.build.code : '', status: ['building', 'ready', 'failed'].includes(d.build.status) ? d.build.status : 'ready', file: typeof d.build.file === 'string' ? d.build.file : null, notes: typeof d.build.notes === 'string' ? d.build.notes : null, at: Date.now() };
+    if (isObj(d.build) && int(d.build.rev) != null && cleanLang(d.build.lang)) build = { rev: int(d.rev) == null || int(d.build.rev) === int(d.rev) ? ed.rev : ed.rev - 1, lang: cleanLang(d.build.lang), code: typeof d.build.code === 'string' ? d.build.code : '', status: ['building', 'ready', 'failed'].includes(d.build.status) ? d.build.status : 'ready', source: d.build.source === 'local' ? 'local' : 'claude', file: typeof d.build.file === 'string' ? d.build.file : null, notes: typeof d.build.notes === 'string' ? d.build.notes : null, at: Date.now() };
+    lastClaude = build?.source === 'claude' ? { rev: build.rev, status: build.status } : null;
     runs.length = 0;
-    if (Array.isArray(d.runs)) for (const r of d.runs.slice(-RUNS_MAX)) if (isObj(r) && r.id) runs.push({ id: String(r.id), rev: int(r.rev, 0), buildRev: int(r.buildRev), lang: cleanLang(r.lang) || 'pseudo', at: int(r.at, Date.now()), status: r.status === 'running' ? 'lost' : (['done', 'failed', 'lost'].includes(r.status) ? r.status : 'done'), stdout: String(r.stdout ?? ''), stderr: String(r.stderr ?? ''), system: '', exit: int(r.exit), ms: int(r.ms), lost: 0 });
+    if (Array.isArray(d.runs)) {
+      for (const r of d.runs.slice(-RUNS_MAX)) {
+        if (!isObj(r) || !r.id) continue;
+        const e = runEntry(null, String(r.id));
+        Object.assign(e, { rev: int(r.rev, 0), buildRev: intOrNull(r.buildRev), lang: cleanLang(r.lang) || 'pseudo', at: int(r.at, Date.now()), status: r.status === 'running' ? 'lost' : (['done', 'failed', 'lost'].includes(r.status) ? r.status : 'done'), stdout: String(r.stdout ?? ''), stderr: String(r.stderr ?? ''), exit: intOrNull(r.exit), ms: intOrNull(r.ms), sandbox: typeof r.sandbox === 'string' && r.sandbox ? r.sandbox.slice(0, 40) : null, killed: r.killed === 'timeout' || r.killed === 'output' ? r.killed : null });
+        runs.push(e);
+      }
+    }
     annotations.clear();
     if (Array.isArray(d.annotations)) for (const a of d.annotations) if (isObj(a) && int(a.line) >= 1 && int(a.line) <= ed.lines && typeof a.text === 'string' && a.text.trim()) annotations.set(int(a.line), { kind: KINDS.includes(a.kind) ? a.kind : 'note', text: a.text.slice(0, 1000) });
     renderBuild();
@@ -720,7 +1059,7 @@ function runCommand(type, fn, data, msg) {
   }
 }
 
-// ───────────────────────────── 10. companion, chrome, keyboard, start-up ─────────────────────────────
+// ───────────────────────────── 11. companion, chrome, keyboard, start-up ─────────────────────────────
 
 let shell = { entity: null, chat: null, toast: null, listening: null };
 let hasShell = false;
@@ -748,7 +1087,7 @@ function entityContext() {
   const last = runs[runs.length - 1] || null;
   return {
     lang: L.name, rev: ed.rev, line: c.line, col: c.col, lineText: ed.lineText(c.line).slice(0, 200), selection: ed.getSelection(),
-    hasGhost: !!g, ghostSource: g ? g.source : null, build: build ? { rev: build.rev, status: buildState(), lang: build.lang } : null,
+    hasGhost: !!g, ghostSource: g ? g.source : null, build: build ? { rev: build.rev, status: buildState(), lang: build.lang, source: build.source } : null,
     lastRun: last ? { id: last.id, exit: last.exit, status: last.status } : null, lines: ed.lines,
   };
 }
@@ -777,7 +1116,7 @@ function updateStatus() {
   const g = ed.ghost;
   stGhost.textContent = g ? (g.alts > 1 ? `${g.source} ${g.index + 1}/${g.alts}` : g.source) : '—';
   const st = buildState();
-  stBuild.textContent = st === 'none' ? '—' : st === 'building' ? 'building' : st === 'failed' ? 'failed' : `${st} rev ${build.rev}`;
+  stBuild.textContent = st === 'none' ? '—' : st === 'building' ? 'building' : st === 'failed' ? 'failed' : `${st} rev ${build.rev}${build.source === 'local' ? ' (as written)' : ''}`;
   stBuild.dataset.state = st;
   if (prefs.tabFocus) stGhost.parentElement.dataset.tabfocus = '1'; else delete stGhost.parentElement.dataset.tabfocus;
 }
@@ -819,6 +1158,7 @@ function toggleHelp(force) {
 }
 /** Esc: closes the innermost open thing. @returns {boolean} */
 function closeOverlays() {
+  if (consentOpen()) { closeConsent(); return true; }              // Esc on the consent card: close it, run nothing
   if (!helpEl.hidden) { toggleHelp(false); btnHelp.focus({ preventScroll: true }); return true; }
   if (!askForm.hidden) { closeAsk(); return true; }
   if (!notePop.hidden) { hideNote(); return true; }
@@ -832,6 +1172,7 @@ function onKeyDown(e) {
   const t = e.target instanceof Element ? e.target : null;
   const mod = e.ctrlKey || e.metaKey;
   if (e.key === 'Escape') { if (closeOverlays()) e.preventDefault(); return; }
+  if (consentOpen()) { if (mod && e.key === 'Enter') e.preventDefault(); return; }   // the card is modal: only its buttons and Esc
   if (mod && e.key === 'Enter') { e.preventDefault(); if (e.shiftKey) sendToClaude(); else doRun(); return; }
   if (mod && !e.shiftKey && !e.altKey && e.key.toLowerCase() === 'k') { e.preventDefault(); openAsk(); return; }
   if (e.altKey && !mod && e.key === '\\') { e.preventDefault(); requestGhost('key'); return; }
@@ -870,6 +1211,7 @@ if (ShellApi && typeof ShellApi.mount === 'function') {
 if (hasShell) { try { shell.entity?.onPick?.((it) => runPick(it?.id)); } catch (err) { console.warn('[cocode] onPick', err); } }
 
 for (const [type, fn] of Object.entries(COMMANDS)) lets.on(type, (data, msg) => runCommand(type, fn, data, msg));
+lets.on('lip.hello', () => { fetchRunner(); });                   // the host greets every (re)connect: re-read the local runner
 lets.onStatus(showStatus);
 showStatus(lets.status);
 
@@ -913,5 +1255,6 @@ renderSeeds();
 renderBuild();
 renderRuns();
 renderNotes();
+renderRunner();
 updateStatus();
 ed.focus();

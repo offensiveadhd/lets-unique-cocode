@@ -1,13 +1,13 @@
 {
   "lip": 1,
   "name": "cocode",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "title": "Cocode — talk in code",
-  "description": "An editor for any language, even one that doesn't exist. Claude predicts your next lines as a ghost you accept with Tab, prepares the real program in the background so Run is instant, and reads what you send as a question, a task or a note.",
+  "description": "An editor for any language, even one that doesn't exist. Claude predicts your next lines as a ghost you accept with Tab, prepares the real program in the background, and reads what you send as a question, a task or a note. With your OK, Run executes Python and JavaScript on this machine in milliseconds.",
   "entry": "ui/index.html",
   "guide": "GUIDE.md",
   "icon": "icon.svg",
-  "engine": ">=0.4.0",
+  "engine": ">=0.7.0",
   "domains": [
     "cocode"
   ],
@@ -35,8 +35,12 @@
       "summary": "The human asked for the real program in a target language (Build pane select or Prepare): {rev, text, lang, target: auto|<lang>}"
     },
     "cocode.run": {
-      "summary": "Run pressed (Ctrl+Enter): {run, rev, text, lang, build?}. Execute the build (or build first), stream cocode.output with this run id.",
+      "summary": "Run pressed and the window could not run it itself (no local runner, a language it cannot run here, or Not now): {run, rev, text, lang, build?}. Run it and stream cocode.output.",
       "schema": "schemas/run.json"
+    },
+    "cocode.ran": {
+      "summary": "The window ran the build on this machine: {run, rev, buildRev, lang, sandbox, exit, ms, timedOut, killed, stdout, stderr} (4 000-char tails). React; never run it again.",
+      "schema": "schemas/ran.json"
     },
     "cocode.ask": {
       "summary": "A question with the code: {question, rev, text, lang, line, selection?, source: toolbar|inline|menu}. Inline = a line starting with ?? ended with Enter.",
@@ -59,7 +63,7 @@
       "summary": "Starting points for an empty editor, from memory and sessions: {items:[{id, label, text, lang?, hint?}]} (max 6)"
     },
     "cocode.build": {
-      "summary": "The real program for a rev, prepared ahead: {rev, lang, code, status?: building|ready|failed, file?, notes?, seq?, done?}",
+      "summary": "The real program for a rev: {rev, lang, code, status?: building|ready|failed, file?, notes?, seq?, done?}. Always replaces the window's own as-written build (source local).",
       "schema": "schemas/build.json"
     },
     "cocode.output": {
@@ -97,7 +101,12 @@
   },
   "permissions": {
     "fs.write": [],
-    "net": []
+    "net": [],
+    "exec": [
+      "python",
+      "javascript",
+      "typescript"
+    ]
   },
   "session": {
     "export": "cocode.export",

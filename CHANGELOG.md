@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.2.0 — 2026-10-13
+
+Run on your machine. With the local runner of lets 0.7.0 and your OK, **Run** executes Python, JavaScript and TypeScript in milliseconds instead of waiting for Claude.
+
+- **Runner discovery:** the window reads `GET /lip/run/info` on every connect and shows a badge in the Output pane header: `local: python · javascript · typescript`, `local: needs your OK` or `local: off`; its title names each language's version and sandbox. An engine without the runner (404), with it switched off, or older than 0.7.0 changes nothing: every Run goes to Claude as before.
+- **Consent card:** the first local Run asks *Run on this machine?* and says what that means: it runs as you, in a temporary folder under `~/.lets/run/jobs` that is deleted afterwards, with 30 s and 1 MB limits; the Python audit hook blocks files outside that folder, sockets and subprocesses; the Node permission model blocks files outside that folder and child processes, but not the network; it is not a VM. **Allow on this machine** records it with the engine (`POST /lip/run/consent`), **Not now** hands that run to Claude, `Esc` runs nothing. The window stores nothing itself.
+- **Local runs:** `POST /lip/run` streams NDJSON into the run entry as it arrives, with a `local · <sandbox>` badge; the pill reads `exit N`, `timeout` or `output cap`. At the end the window emits the new **`cocode.ran`** event `{run, rev, buildRev, lang, sandbox, exit, ms, timedOut, killed, stdout, stderr}` so Claude can react, and no `cocode.run`. `busy` and `unavailable` hand the same run to Claude, a revoked consent brings the card back, and at most two local runs go at once.
+- **As-written builds:** when the language chip names a language the runner runs, the text itself becomes the build (`source: "local"`, the pill and the status line say *as written*) until Claude sends a better one; Claude's `cocode.build` always replaces it. `build.source` is in snapshots, exports and `cocode.load`, and runs carry `sandbox` and `killed`.
+- **Manifest:** `permissions.exec: ["python", "javascript", "typescript"]`, and the `cocode.ran` event with `schemas/ran.json`. The vendored `unique.schema.json` knows `exec`. Engines before 0.7.0 reject a manifest that declares it.
+- **Guide:** on `cocode.ran`, one Doto line and, after a failure, the fix as a ghost or an annotation plus a corrected build, never a second run; on `cocode.run`, one call to the engine's `run` tool with `emit: "cocode.output"` instead of files and the shell; build python and javascript only to improve on the text.
+- **Fixes:** a resumed run without an exit code, a duration or a build rev no longer comes back as `exit 0`, `0 ms` or `build 0`; the export schema allows the `…` that starts a cut output tail; the window reports its real version.
+
 ## 0.1.1 — 2026-10-13
 
 Fixes from an independent review of 0.1.0.

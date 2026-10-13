@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://lets.dev/schemas/uniques/cocode/ran.json",
+  "title": "cocode.ran (event)",
+  "description": "The window ran the build on this machine through the engine's local runner (POST /lip/run, after the human's consent) and the run is over; the output is already in the Output pane. React with one line. When it failed, offer the fix as a ghost or an annotation and send a corrected cocode.build; never run it again yourself. Sent instead of cocode.run, never with it.",
+  "type": "object",
+  "required": ["run", "rev", "buildRev", "lang", "sandbox", "exit", "ms", "timedOut", "killed", "stdout", "stderr"],
+  "properties": {
+    "run": { "type": "string", "pattern": "^r_[0-9]+_[0-9]+$", "description": "The window's id for this run: r_<rev>_<n>." },
+    "rev": { "$ref": "#/$defs/rev", "description": "The editor's rev when Run was pressed." },
+    "buildRev": { "$ref": "#/$defs/rev", "description": "The rev of the build that ran; lower than rev when the build was stale." },
+    "lang": { "type": "string", "pattern": "^[a-z0-9+#._-]{1,24}$", "description": "The runner's language name: python, javascript or typescript." },
+    "sandbox": { "type": ["string", "null"], "description": "The isolation level the runner used: audit-hook (python) or node-permission (javascript, typescript)." },
+    "exit": { "type": ["integer", "null"], "description": "Exit code; null when the runner killed the process." },
+    "ms": { "type": "integer", "minimum": 0, "description": "How long the run took." },
+    "timedOut": { "type": "boolean", "description": "true when the time limit (30 s by default) killed it." },
+    "killed": { "enum": [null, "timeout", "output"], "description": "Why the runner killed it: its time limit or its 1 MB output cap; null when it exited by itself." },
+    "stdout": { "type": "string", "maxLength": 4001, "description": "The last 4 000 characters, with a leading … when cut." },
+    "stderr": { "type": "string", "maxLength": 4001, "description": "The last 4 000 characters, with a leading … when cut." }
+  },
+  "$defs": {
+    "rev": { "type": "integer", "minimum": 1, "description": "Document revision; starts at 1 and never goes down." }
+  }
+}
