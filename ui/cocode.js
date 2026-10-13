@@ -175,13 +175,14 @@ let acceptStreak = 0;
 let lastAway = 0;
 let changedBy = null;
 let loadedAt = 0;
+let announceGhost = true;
 
 let prefs = { rail: 'open', build: true, output: true, tab: 'build', tabFocus: false };
 try { const raw = localStorage.getItem(PREFS_KEY); if (raw) { const p = JSON.parse(raw); if (isObj(p)) prefs = { ...prefs, ...p }; } } catch { /* storage unavailable */ }
 let recents = Array.isArray(prefs.recents) ? prefs.recents.filter((r) => isObj(r) && typeof r.text === 'string') : [];
 delete prefs.recents;
 function savePrefs() { try { localStorage.setItem(PREFS_KEY, JSON.stringify({ ...prefs, recents })); } catch { /* ignore */ } }
-function saveDraft() { try { sessionStorage.setItem(DRAFT_KEY, JSON.stringify({ text: ed.text.slice(0, TEXT_MAX), lang: L.name, detected: L.detected, at: Date.now() })); } catch { /* ignore */ } }
+function saveDraft() { try { sessionStorage.setItem(DRAFT_KEY, JSON.stringify({ text: ed.text.slice(0, 1000000), lang: L.name, detected: L.detected, at: Date.now() })); } catch { /* ignore */ } }
 
 // ───────────────────────────── 4. language chip ─────────────────────────────
 
@@ -276,7 +277,8 @@ const localGhost = debounce(() => {
 
 function onGhost(evt) {
   if (evt.type === 'show') {
-    if (evt.source === 'claude') srLive.textContent = `Suggestion: ${preview(evt.text, 120)}`;
+    if (evt.source === 'claude' && announceGhost) srLive.textContent = `Suggestion: ${preview(evt.text, 120)}`;
+    announceGhost = true;
   } else if (evt.type === 'accept') {
     stats.accepted++;
     if (evt.source === 'local') stats.acceptedLocal++;
@@ -332,22 +334,45 @@ function renderRuns() {
   const last = runs[runs.length - 1];
   runPill.dataset.state = open ? 'running' : last ? (last.status === 'done' ? 'ok' : last.status === 'lost' ? 'lost' : 'failed') : 'none';
   runPill.textContent = open ? `running · ${open}` : last ? (last.status === 'done' ? `ok · exit 0` : last.status === 'lost' ? 'no answer yet' : last.status === 'failed' ? `failed · exit ${last.exit ?? '?'}` : last.status) : '—';
-  for (const r of [...runs].reverse()) {
-    const pre = h('pre', { class: 'lets-pre run-out' });
-    if (r.system) pre.append(h('span', { class: 'out-sys', text: r.system }));
-    if (r.stdout) pre.append(h('span', { class: 'out-std', text: r.stdout }));
-    if (r.stderr) pre.append(h('span', { class: 'out-err', text: r.stderr }));
-    if (!r.system && !r.stdout && !r.stderr) pre.append(h('span', { class: 'out-sys lets-dim', text: r.status === 'running' ? 'waiting for output…' : r.status === 'lost' ? 'no answer yet' : '(no output)' }));
-    runsEl.append(h('article', { class: 'run', 'data-status': r.status, 'data-run': r.id, 'aria-label': `Run ${r.id}` },
-      h('header', { class: 'run-head' },
-        h('span', { class: 'run-id', text: r.id }),
-        h('span', { class: 'badge', text: r.lang }),
-        h('span', { class: 'lets-dim', text: `rev ${r.rev}${r.buildRev != null && r.buildRev !== r.rev ? ` · build ${r.buildRev}` : ''}` }),
-        h('span', { class: 'pill', 'data-state': r.status === 'done' ? 'ok' : r.status === 'running' ? 'running' : r.status, text: r.status === 'running' ? 'running…' : r.status === 'done' ? `exit ${r.exit ?? 0}` : r.status === 'failed' ? `exit ${r.exit ?? '?'}` : r.status }),
-        r.ms != null ? h('span', { class: 'lets-dim', text: `${r.ms} ms` }) : null),
-      pre));
-  }
+  for (const r of [...runs].reverse()) runsEl.append(runArticle(r));
   updateStatus();
+}
+function runOutput(r) {
+  const pre = h('pre', { class: 'lets-pre run-out' });
+  if (r.system) pre.append(h('span', { class: 'out-sys', text: r.system }));
+  if (r.stdout) pre.append(h('span', { class: 'out-std', text: r.stdout }));
+  if (r.stderr) pre.append(h('span', { class: 'out-err', text: r.stderr }));
+  if (!r.system && !r.stdout && !r.stderr) pre.append(h('span', { class: 'out-sys lets-dim', text: r.status === 'running' ? 'waiting for output…' : r.status === 'lost' ? 'no answer yet' : '(no output)' }));
+  return pre;
+}
+function runArticle(r) {
+  return h('article', { class: 'run', 'data-status': r.status, 'data-run': r.id, 'aria-label': `Run ${r.id}` },
+    h('header', { class: 'run-head' },
+      h('span', { class: 'run-id', text: r.id }),
+      h('span', { class: 'badge', text: r.lang }),
+      h('span', { class: 'lets-dim', text: `rev ${r.rev}${r.buildRev != null && r.buildRev !== r.rev ? ` · build ${r.buildRev}` : ''}` }),
+      h('span', { class: 'pill', 'data-state': r.status === 'done' ? 'ok' : r.status === 'running' ? 'running' : r.status, text: r.status === 'running' ? 'running…' : r.status === 'done' ? `exit ${r.exit ?? 0}` : r.status === 'failed' ? `exit ${r.exit ?? '?'}` : r.status }),
+      r.ms != null ? h('span', { class: 'lets-dim', text: `${r.ms} ms` }) : null),
+    runOutput(r));
+}
+/** Update one run in place (a streamed chunk): keeps the pane's scroll and the other entries untouched. */
+function renderRun(r) {
+  const el = runsEl.querySelector(`[data-run="${CSS.escape(r.id)}"]`);
+  if (!el) { renderRuns(); return; }
+  el.dataset.status = r.status;
+  const pre = el.querySelector('.run-out');
+  const stick = pre && pre.scrollTop + pre.clientHeight >= pre.scrollHeight - 4;
+  const next = runOutput(r);
+  if (pre) pre.replaceWith(next); else el.append(next);
+  if (stick) next.scrollTop = next.scrollHeight;
+  const pill = el.querySelector('.pill');
+  if (pill) { pill.dataset.state = r.status === 'done' ? 'ok' : r.status; pill.textContent = r.status === 'running' ? 'running…' : r.status === 'lost' ? 'lost' : pill.textContent; }
+  updateStatus();
+}
+/** (Re)arm the 60 s "no answer yet" timer of a running run. */
+function armLost(r) {
+  clearTimeout(r.lost);
+  r.lost = setTimeout(() => { if (r.status === 'running') { r.status = 'lost'; renderRuns(); } }, LOST_MS);
 }
 
 function renderNotes() {
@@ -408,7 +433,9 @@ btnPrepare.addEventListener('click', () => requestBuild(targetSel.value));
 targetSel.addEventListener('change', () => {
   if (targetSel.value === 'other') {
     const v = cleanLang(prompt('Target language', '') || '');
-    if (v && !TARGETS.includes(v)) { targetSel.append(h('option', { value: v, text: v })); targetSel.value = v; } else targetSel.value = v || 'auto';
+    if (!v || v === 'other') { targetSel.value = 'auto'; return; }          // cancelled or empty: no request
+    if (!TARGETS.includes(v)) { if (![...targetSel.options].some((o) => o.value === v)) targetSel.append(h('option', { value: v, text: v })); }
+    targetSel.value = v;
   }
   requestBuild(targetSel.value);
 });
@@ -446,9 +473,10 @@ let pendingDelta = null;
 function onChange({ delta, source }) {
   const by = source === 'claude' ? 'claude' : source === 'restore' ? 'restore' : 'human';
   changedBy = changedBy === 'human' ? 'human' : by;
-  if (delta) pendingDelta = pendingDelta ? { from: Math.min(pendingDelta.from, delta.from), to: Math.max(pendingDelta.to, delta.to), text: delta.text } : delta;
+  // several changes inside one debounce window: keep the merged line range, drop the text (it would describe the wrong span)
+  if (delta) pendingDelta = pendingDelta ? { from: Math.min(pendingDelta.from, delta.from), to: Math.max(pendingDelta.to, delta.to) } : delta;
   emitChanged();
-  if (by === 'human') { acceptStreakGuard(); localGhost(); }
+  if (by === 'human') localGhost();
   redetect(false);
   renderSeeds();
   renderBuild();
@@ -457,8 +485,6 @@ function onChange({ delta, source }) {
   btnUndo.disabled = !ed.canUndo;
   btnRedo.disabled = !ed.canRedo;
 }
-function acceptStreakGuard() { /* typing between accepts does not reset the streak; rejects do */ }
-
 function snapshotPayload(withIntent) {
   const text = ed.text;
   const first = text.split('\n').find((l) => l.trim()) || '';
@@ -482,7 +508,7 @@ function doRun() {
   emitChanged.flush();
   const id = `r_${ed.rev}_${++runSeq}`;
   const r = { id, rev: ed.rev, buildRev: build ? build.rev : null, lang: build?.lang || L.name, at: Date.now(), status: 'running', stdout: '', stderr: '', system: '', exit: null, ms: null, lost: 0 };
-  r.lost = setTimeout(() => { if (r.status === 'running') { r.status = 'lost'; renderRuns(); } }, LOST_MS);
+  armLost(r);
   runs.push(r);
   while (runs.length > RUNS_MAX) { const i = runs.findIndex((x) => x.status !== 'running'); if (i < 0) break; runs.splice(i, 1); }
   renderRuns();
@@ -556,7 +582,8 @@ const COMMANDS = {
       ghostStreams.set(key, s);
       text = s.text;
       if (d.done) ghostStreams.delete(key);
-    }
+    } else ghostStreams.delete(key);                              // a whole ghost ends any partial stream under that key
+    announceGhost = !streaming || !!d.done;                       // announce a streamed ghost once, when it is complete
     if (!text) { if (!streaming || d.done) ed.clearGhost(null); return; }
     const rev = int(d.rev);
     if (rev != null && rev !== ed.rev) {
@@ -581,6 +608,8 @@ const COMMANDS = {
     const status = ['building', 'ready', 'failed'].includes(d.status) ? d.status : 'ready';
     let code = typeof d.code === 'string' ? d.code : '';
     if (d.seq != null) {
+      // a late chunk after the build for this rev was already closed is ignored, so it cannot replace a finished build
+      if (!buildStream && build && build.rev === rev && build.status !== 'building') return;
       if (buildStream && buildStream.rev === rev) buildStream.code += code; else buildStream = { rev, code };
       code = buildStream.code;
       if (d.done) buildStream = null;
@@ -595,18 +624,24 @@ const COMMANDS = {
     const id = String(d.run || '').slice(0, 60);
     if (!id) throw new Error('expected {run, stream, text}');
     let r = findRun(id);
-    if (!r) { r = { id, rev: ed.rev, buildRev: null, lang: build?.lang || L.name, at: Date.now(), status: 'running', stdout: '', stderr: '', system: '', exit: null, ms: null, lost: 0 }; runs.push(r); }
+    let created = false;
+    if (!r) {
+      // a run Claude named itself: same entry and the same 60 s "no answer yet" timer as a window-made run
+      r = { id, rev: ed.rev, buildRev: null, lang: build?.lang || L.name, at: Date.now(), status: 'running', stdout: '', stderr: '', system: '', exit: null, ms: null, lost: 0 };
+      armLost(r);
+      runs.push(r);
+      created = true;
+    }
     if (r.status === 'lost') r.status = 'running';
     const stream = ['stdout', 'stderr', 'system'].includes(d.stream) ? d.stream : 'stdout';
     const text = typeof d.text === 'string' ? d.text : '';
-    if (text) { r[stream] = (r[stream] + text).slice(-100000); clearTimeout(r.lost); r.lost = setTimeout(() => { if (r.status === 'running') { r.status = 'lost'; renderRuns(); } }, LOST_MS); }
+    if (text) { r[stream] = (r[stream] + text).slice(-100000); armLost(r); }
     if (d.done) {
-      const exit = int(d.exit, text || r.stderr ? (r.stderr ? 1 : 0) : 0);
+      const exit = int(d.exit, r.stderr ? 1 : 0);
       finishRun(r, exit === 0 ? 'done' : 'failed', exit, int(d.ms));
       react(exit === 0 ? 'cheer' : 'oops');
     }
-    renderRuns();
-    openPane('output');
+    if (created || d.done) { renderRuns(); openPane('output'); } else renderRun(r);
   },
   'cocode.insert': (d) => {
     if (typeof d.text !== 'string') throw new Error('expected {at, text}');
@@ -647,18 +682,20 @@ const COMMANDS = {
   },
   'cocode.focus': (d) => {
     const line = int(d.line);
-    if (line == null || line < 1) throw new Error('expected {line, col?}');
-    ed.scrollToLine(line, int(d.col, 0));
+    if (line == null) throw new Error('expected {line, col?}');
+    ed.scrollToLine(clamp(line, 1, ed.lines), int(d.col, 0));   // out-of-range lines clamp, like insert and replace
     ed.focus();
   },
   'cocode.load': (d) => {
     if (typeof d.text !== 'string') throw new Error('expected {text, lang?, build?, runs?, annotations?, cursor?}');
     loadedAt = performance.now();
+    const same = ed.text === d.text;
     ed.setAll(d.text, 'restore', { cursor: isObj(d.cursor) ? { line: int(d.cursor.line, 1), col: int(d.cursor.col, 0) } : null });
+    if (same) { changedBy = 'restore'; emitChanged(); }           // the text did not change, but the restore still happened
     if (d.lang) setLang(d.lang, d.detected === true); else { L.detected = true; lastDetect = ''; redetect(true); showLang(); }
     build = null;
     // the saved build was made for the saved rev: re-base it on this window's rev (fresh if it matched, stale otherwise)
-    if (isObj(d.build) && int(d.build.rev) != null && cleanLang(d.build.lang)) build = { rev: int(d.build.rev) === int(d.rev) ? ed.rev : ed.rev - 1, lang: cleanLang(d.build.lang), code: typeof d.build.code === 'string' ? d.build.code : '', status: ['building', 'ready', 'failed'].includes(d.build.status) ? d.build.status : 'ready', file: typeof d.build.file === 'string' ? d.build.file : null, notes: typeof d.build.notes === 'string' ? d.build.notes : null, at: Date.now() };
+    if (isObj(d.build) && int(d.build.rev) != null && cleanLang(d.build.lang)) build = { rev: int(d.rev) == null || int(d.build.rev) === int(d.rev) ? ed.rev : ed.rev - 1, lang: cleanLang(d.build.lang), code: typeof d.build.code === 'string' ? d.build.code : '', status: ['building', 'ready', 'failed'].includes(d.build.status) ? d.build.status : 'ready', file: typeof d.build.file === 'string' ? d.build.file : null, notes: typeof d.build.notes === 'string' ? d.build.notes : null, at: Date.now() };
     runs.length = 0;
     if (Array.isArray(d.runs)) for (const r of d.runs.slice(-RUNS_MAX)) if (isObj(r) && r.id) runs.push({ id: String(r.id), rev: int(r.rev, 0), buildRev: int(r.buildRev), lang: cleanLang(r.lang) || 'pseudo', at: int(r.at, Date.now()), status: r.status === 'running' ? 'lost' : (['done', 'failed', 'lost'].includes(r.status) ? r.status : 'done'), stdout: String(r.stdout ?? ''), stderr: String(r.stderr ?? ''), system: '', exit: int(r.exit), ms: int(r.ms), lost: 0 });
     annotations.clear();
@@ -856,16 +893,17 @@ $('toolbar').addEventListener('click', (e) => {
 });
 document.addEventListener('keydown', onKeyDown);
 NARROW.addEventListener('change', applyPanes);
+REDUCED.addEventListener('change', () => ed.setReduced(REDUCED.matches));
 addEventListener('resize', () => ed.remeasure());
 
 applyPanes();
 showLang();
 
-// a reload keeps the draft of this tab; a resume (cocode.load within 8 s) wins over it
+// a reload keeps the draft of this tab; a resume (cocode.load, queued by the engine before the window attaches) replaces it
 try {
   const raw = sessionStorage.getItem(DRAFT_KEY);
   const d = raw ? JSON.parse(raw) : null;
-  if (d && typeof d.text === 'string' && d.text && performance.now() - bootAt < RESUME_WINDOW && !loadedAt) {
+  if (d && typeof d.text === 'string' && d.text && !loadedAt) {
     ed.setAll(d.text, 'restore');
     if (d.lang && d.detected === false) setLang(d.lang, false); else { lastDetect = ''; redetect(true); }
   }

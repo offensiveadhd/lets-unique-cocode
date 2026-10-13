@@ -45,7 +45,7 @@ export function createEditor(o) {
   const scroller = o.scroller;
   const surface = o.surface;
   const ghostBlock = o.ghostBlock;
-  const reduced = !!o.reduced;
+  let reduced = !!o.reduced;
   const langOf = o.lang || (() => 'pseudo');
   const noop = () => {};
   const onChange = o.onChange || noop;
@@ -202,7 +202,7 @@ export function createEditor(o) {
     else { a = b = offsetOf(at); }
     if (ghost) ghost = null;
     const r = replaceRange(a, b, insert, { source, kind: source === 'claude' ? 'cmd' : 'accept' });
-    if (source === 'claude') glow(r.from, r.to, '', 700, 'ins');
+    if (source === 'claude') glow(r.from, r.to, '', 600, 'ins');
     return r;
   }
 
@@ -217,7 +217,7 @@ export function createEditor(o) {
     if (ins.endsWith('\n')) ins = ins.slice(0, -1);
     if (ghost) ghost = null;
     const r = replaceRange(a, b, ins, { source, kind: 'cmd', select: 'end' });
-    if (source === 'claude') glow(r.from, r.to, '', 700, 'ins');
+    if (source === 'claude') glow(r.from, r.to, '', 600, 'ins');
     return r;
   }
 
@@ -234,7 +234,8 @@ export function createEditor(o) {
     let s = String(t ?? '').replace(/\r/g, '').replace(/\n+$/, '');
     if (!s) { clearGhost(null); return false; }
     const lines = s.split('\n').slice(0, GHOST_MAX_LINES);
-    const alts = [lines.join('\n'), ...alternatives.map((x) => String(x ?? '').replace(/\r/g, '').replace(/\n+$/, '')).filter((x) => x && x !== lines.join('\n')).slice(0, 5)];
+    const cap = (x) => String(x ?? '').replace(/\r/g, '').replace(/\n+$/, '').split('\n').slice(0, GHOST_MAX_LINES).join('\n');
+    const alts = [lines.join('\n'), ...alternatives.map(cap).filter((x) => x && x !== lines.join('\n')).slice(0, 5)];
     const anchor = at && Number.isFinite(at.line) ? posOf(offsetOf(at)) : getCursor();
     ghost = { text: alts[0], lines, source, alts, index: 0, anchor, rev: grev, pinned: !!at };
     scheduleRender();
@@ -294,7 +295,10 @@ export function createEditor(o) {
     if (data && ghost.text.startsWith(data)) {
       const rest = ghost.text.slice(data.length);
       if (!rest.trim()) { ghost = null; return; }
-      ghost = { ...ghost, text: rest, lines: rest.split('\n'), alts: [rest], index: 0, anchor: null };
+      // the alternatives shrink in step; those that stop matching drop out
+      const alts = ghost.alts.map((a) => (a.startsWith(data) ? a.slice(data.length) : null)).filter((a) => a && a.trim());
+      const index = Math.max(0, alts.indexOf(rest));
+      ghost = { ...ghost, text: rest, lines: rest.split('\n'), alts: alts.length ? alts : [rest], index, anchor: null };
       return;
     }
     clearGhost('typed-away');
@@ -385,13 +389,14 @@ export function createEditor(o) {
     }
     cache.length = lines.length;
     tokCache = next;
-    // reconcile the layer's children
+    // reconcile the layer's children (a Set keeps this linear on big documents)
     const kids = layer.childNodes;
+    const keep = new Set(els);
     for (let i = 0; i < els.length; i++) {
       const cur = kids[i];
       if (cur === els[i]) continue;
       if (cur) layer.insertBefore(els[i], cur); else layer.appendChild(els[i]);
-      if (cur && cur !== els[i] && cur.parentNode === layer && !els.includes(cur)) cur.remove();
+      if (cur && cur.parentNode === layer && !keep.has(cur)) cur.remove();
     }
     while (kids.length > els.length) kids[kids.length - 1].remove();
     renderGutter(lines.length);
@@ -417,13 +422,27 @@ export function createEditor(o) {
       d.append(dot, num);
       gutter.appendChild(d);
     }
-    const cur = getCursor().line;
-    for (let i = 0; i < n; i++) {
-      const d = gutter.children[i];
-      const k = markers.get(i + 1);
-      if (k) d.dataset.kind = k; else delete d.dataset.kind;
-      d.classList.toggle('cur', i + 1 === cur);
+    // markers: a full pass only when they changed; the current-line class touches two rows
+    if (markersDirty) {
+      markersDirty = false;
+      for (let i = 0; i < n; i++) {
+        const d = gutter.children[i];
+        const k = markers.get(i + 1);
+        if (k) d.dataset.kind = k; else delete d.dataset.kind;
+      }
     }
+    gutterCur = 0;
+    markCurrentRow(getCursor().line);
+  }
+  let markersDirty = true;
+  let gutterCur = 0;
+  function markCurrentRow(line) {
+    if (line === gutterCur) return;
+    const prev = gutter.children[gutterCur - 1];
+    if (prev) prev.classList.remove('cur');
+    const next = gutter.children[line - 1];
+    if (next) next.classList.add('cur');
+    gutterCur = line;
   }
 
   function renderGhostBlock(anchor) {
@@ -493,10 +512,7 @@ export function createEditor(o) {
       if (off !== a) clearGhost('moved');
     }
     positionCurline();
-    if (gutter.children.length) {
-      const cur = getCursor().line;
-      for (const d of gutter.children) d.classList.toggle('cur', Number(d.dataset.line) === cur);
-    }
+    if (gutter.children.length) markCurrentRow(getCursor().line);
     if (reveal) revealCaret();
     if (off !== lastCaret) { lastCaret = off; onCursor(); }
   }
@@ -633,7 +649,12 @@ export function createEditor(o) {
     const plain = !e.ctrlKey && !e.metaKey && !e.altKey;
     if (k === 'Tab' && tabFocus) return;                 // Ctrl+M mode: Tab moves focus
     if (k === 'Tab' && plain && !e.shiftKey) { e.preventDefault(); if (ghost) acceptGhost(false); else if (ta.selectionStart !== ta.selectionEnd && text.slice(ta.selectionStart, ta.selectionEnd).includes('\n')) indent(1); else replaceRange(ta.selectionStart, ta.selectionEnd, INDENT, { source: 'human', kind: 'type' }); return; }
-    if (k === 'Tab' && e.shiftKey && !isMod(e) && !e.altKey) { e.preventDefault(); indent(-1); return; }
+    if (k === 'Tab' && e.shiftKey && !isMod(e) && !e.altKey) {
+      // outdent only when there is something to outdent; otherwise Shift+Tab leaves the editor (no keyboard trap)
+      const multi = ta.selectionStart !== ta.selectionEnd && text.slice(ta.selectionStart, ta.selectionEnd).includes('\n');
+      if (multi || /^[ \t]/.test(lineText(getCursor().line))) { e.preventDefault(); indent(-1); }
+      return;
+    }
     if (k === 'Escape' && ghost) { e.preventDefault(); e.stopPropagation(); clearGhost('esc'); return; }
     if (k === 'ArrowRight' && isMod(e) && !e.shiftKey && !e.altKey && ghost) { e.preventDefault(); acceptGhost(true); return; }
     if ((k === ']' || k === '[') && e.altKey && !isMod(e) && ghost) { e.preventDefault(); cycleGhost(k === ']' ? 1 : -1); return; }
@@ -672,7 +693,8 @@ export function createEditor(o) {
     insertAt, replaceLines, setAll,
     showGhost, clearGhost, acceptGhost, cycleGhost,
     glow, clearGlows,
-    setMarkers(map) { markers = map instanceof Map ? map : new Map(Object.entries(map || {}).map(([k, v]) => [Number(k), v])); scheduleRender(); },
+    setMarkers(map) { markers = map instanceof Map ? map : new Map(Object.entries(map || {}).map(([k, v]) => [Number(k), v])); markersDirty = true; scheduleRender(); },
+    setReduced(on) { reduced = !!on; },
     lineTop(n) { return metrics.padT + (Math.min(Math.max(1, n | 0), lineCount()) - 1) * metrics.lh; },
     scrollToLine, revealCaret, caretXY,
     undo, redo,

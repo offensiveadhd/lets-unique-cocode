@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.1.1 — 2026-10-13
+
+Fixes from an independent review of 0.1.0.
+
+- **Keyboard:** `Shift+Tab` only outdents when the line is indented (or a multi-line selection is made); otherwise it leaves the editor, so the toolbar is reachable without `Ctrl+M`.
+- **Resume:** a loaded build is marked fresh when it matched the saved text (also when the payload carries no `rev`), and a resume whose text equals the tab's draft still emits `cocode.changed {by:"restore"}`.
+- **Ghost:** typing through a ghost keeps its alternatives (they shrink in step); alternatives are capped at 12 lines like the main text; a whole ghost ends any partial stream under its key; a streamed ghost is announced to screen readers once, when complete.
+- **Runs:** a run that Claude names itself gets the same 60 s *no answer yet* timer; a streamed chunk updates only its own entry (the pane keeps its scroll and no longer re-announces every run); the Output pane opens when a run appears or ends, not on every chunk.
+- **Build:** a late chunk after a build was closed can no longer replace it.
+- **Events:** when several changes merge into one `cocode.changed`, `delta` carries the merged range without `text` instead of the last change's text.
+- **Target language:** cancelling *other…* no longer sends a build request; the literal `other` is refused.
+- **Large documents:** the highlight layer's reconcile is linear (a Set instead of an array scan) and the gutter touches only the two rows whose current-line state changed.
+- **Smaller:** `cocode.focus` clamps out-of-range lines like insert and replace; the draft keeps the whole text (up to 1 MB) instead of its head; the reduced-motion flag follows the OS setting live; the shortcuts overlay takes focus; dead code removed. Contract and schemas updated to match (`cocode.load` documents `rev` and `detected`).
+
 ## 0.1.0 — 2026-10-13
 
 First release. cocode is a code window you talk through: type in any language, let Claude predict, build and run, and send the code as a message.

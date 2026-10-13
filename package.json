@@ -1,6 +1,6 @@
 {
   "name": "lets-unique-cocode",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "cocode — talk in code: an editor for any language where Claude predicts the next lines, builds the real program ahead and runs it.",
   "type": "module",
   "private": true,
