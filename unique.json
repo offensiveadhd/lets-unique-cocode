@@ -1,7 +1,7 @@
 {
   "lip": 1,
   "name": "cocode",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "title": "Cocode — talk in code",
   "description": "An editor for any language, even one that doesn't exist. Claude predicts your next lines as a ghost you accept with Tab, prepares the real program in the background so Run is instant, and reads what you send as a question, a task or a note.",
   "entry": "ui/index.html",

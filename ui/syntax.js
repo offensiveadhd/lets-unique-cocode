@@ -97,10 +97,8 @@ export function tokenizeLine(line, state = { block: null }, lang = 'pseudo') {
     // line comments
     let lc = null;
     for (const m of cs.line) if (line.startsWith(m, i)) { lc = m; break; }
-    if (lc && !(lc === '#' && i > 0 && /[\w)]/.test(line[i - 1]) === false && line[i + 1] === '!' && i === 0 ? false : false)) {
-      // `--` only counts as a comment when followed by a space or at line end (so `x--` stays code)
-      if (lc !== '--' || i + 2 >= n || line[i + 2] === ' ') { push('cm', line.slice(i)); break; }
-    }
+    // `--` only counts as a comment when followed by a space or at line end (so `x--` stays code)
+    if (lc && (lc !== '--' || i + 2 >= n || line[i + 2] === ' ')) { push('cm', line.slice(i)); break; }
     // block comment / triple string open
     if (cs.block && line.startsWith(cs.block[0], i)) {
       const close = cs.block[1];

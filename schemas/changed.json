@@ -4,51 +4,138 @@
   "title": "cocode.changed (event)",
   "description": "The text settled: 500 ms after the last keystroke, settled text only. Sent when the human typed, pasted, accepted a ghost or undid, and when a Claude command or a restore changed the text. Predict the next lines with cocode.suggest, but only for by \"human\".",
   "type": "object",
-  "required": ["rev", "text", "lang", "detected", "cursor", "lines", "prefix", "by"],
+  "required": [
+    "rev",
+    "text",
+    "lang",
+    "detected",
+    "cursor",
+    "lines",
+    "prefix",
+    "by"
+  ],
   "properties": {
-    "rev": { "$ref": "#/$defs/rev" },
-    "text": { "$ref": "#/$defs/text" },
-    "truncated": { "type": "boolean", "description": "true when text was longer than 64 000 characters; the tail is kept." },
-    "lang": { "$ref": "#/$defs/lang" },
-    "detected": { "type": "boolean", "description": "false when the human or Claude set the language chip." },
-    "cursor": { "$ref": "#/$defs/pos" },
+    "rev": {
+      "$ref": "#/$defs/rev"
+    },
+    "text": {
+      "$ref": "#/$defs/text"
+    },
+    "truncated": {
+      "type": "boolean",
+      "description": "true when text was longer than 64 000 characters; the tail is kept."
+    },
+    "lang": {
+      "$ref": "#/$defs/lang"
+    },
+    "detected": {
+      "type": "boolean",
+      "description": "false when the human or Claude set the language chip."
+    },
+    "cursor": {
+      "$ref": "#/$defs/pos"
+    },
     "selection": {
-      "oneOf": [{ "$ref": "#/$defs/selection" }, { "type": "null" }],
+      "oneOf": [
+        {
+          "$ref": "#/$defs/selection"
+        },
+        {
+          "type": "null"
+        }
+      ],
       "description": "The selected range, or null (or absent) when nothing is selected."
     },
-    "lines": { "type": "integer", "minimum": 1, "description": "Number of lines in text. An empty editor has 1." },
-    "prefix": { "type": "string", "maxLength": 200, "description": "The caret line's text up to the caret (at most 200 characters)." },
-    "by": { "enum": ["human", "claude", "restore"], "description": "Who changed the text. Stay silent on claude and restore." },
+    "lines": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Number of lines in text. An empty editor has 1."
+    },
+    "prefix": {
+      "type": "string",
+      "maxLength": 200,
+      "description": "The caret line's text up to the caret (at most 200 characters)."
+    },
+    "by": {
+      "enum": [
+        "human",
+        "claude",
+        "restore"
+      ],
+      "description": "Who changed the text. Stay silent on claude and restore."
+    },
     "delta": {
       "type": "object",
-      "description": "The changed line range when known.",
-      "required": ["from", "to", "text"],
+      "description": "The changed line range when known. When several changes merged into one event it carries the merged range without text.",
+      "required": [
+        "from",
+        "to"
+      ],
       "properties": {
-        "from": { "$ref": "#/$defs/line" },
-        "to": { "$ref": "#/$defs/line" },
-        "text": { "type": "string", "description": "The text of that line range." }
+        "from": {
+          "$ref": "#/$defs/line"
+        },
+        "to": {
+          "$ref": "#/$defs/line"
+        },
+        "text": {
+          "type": "string",
+          "description": "The text of that line range; absent when several changes merged."
+        }
       }
     }
   },
   "$defs": {
-    "rev": { "type": "integer", "minimum": 1, "description": "Document revision; starts at 1 and never goes down." },
-    "text": { "type": "string", "maxLength": 64000, "description": "The whole document." },
-    "lang": { "type": "string", "pattern": "^[a-z0-9+#._-]{1,24}$", "description": "Free text, 1-24 characters: python, js, my-lang, pseudo." },
-    "line": { "type": "integer", "minimum": 1, "description": "1-based line." },
+    "rev": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Document revision; starts at 1 and never goes down."
+    },
+    "text": {
+      "type": "string",
+      "maxLength": 64000,
+      "description": "The whole document."
+    },
+    "lang": {
+      "type": "string",
+      "pattern": "^[a-z0-9+#._-]{1,24}$",
+      "description": "Free text, 1-24 characters: python, js, my-lang, pseudo."
+    },
+    "line": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "1-based line."
+    },
     "pos": {
       "type": "object",
-      "required": ["line", "col"],
+      "required": [
+        "line",
+        "col"
+      ],
       "properties": {
-        "line": { "$ref": "#/$defs/line" },
-        "col": { "type": "integer", "minimum": 0, "description": "0-based column, in characters of the line." }
+        "line": {
+          "$ref": "#/$defs/line"
+        },
+        "col": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "0-based column, in characters of the line."
+        }
       }
     },
     "selection": {
       "type": "object",
-      "required": ["from", "to"],
+      "required": [
+        "from",
+        "to"
+      ],
       "properties": {
-        "from": { "$ref": "#/$defs/pos" },
-        "to": { "$ref": "#/$defs/pos" }
+        "from": {
+          "$ref": "#/$defs/pos"
+        },
+        "to": {
+          "$ref": "#/$defs/pos"
+        }
       }
     }
   }

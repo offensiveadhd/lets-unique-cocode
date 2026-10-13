@@ -2,73 +2,202 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://lets.dev/schemas/uniques/cocode/load.json",
   "title": "cocode.load (command)",
-  "description": "The restore command: renders the payload (a session's cocode.export) without emitting ghost or accept events, bumps rev, and emits one cocode.changed with by \"restore\". A load in the first 8 s after boot wins over the sessionStorage draft.",
+  "description": "The restore command: renders the payload (a session's cocode.export) without emitting ghost or accept events, bumps rev when the text changed, and emits one cocode.changed with by \"restore\" either way. A load replaces the tab's sessionStorage draft.",
   "type": "object",
-  "required": ["text"],
+  "required": [
+    "text"
+  ],
   "properties": {
-    "text": { "type": "string", "maxLength": 64000, "description": "The whole document." },
-    "lang": { "$ref": "#/$defs/lang" },
-    "build": { "$ref": "#/$defs/build" },
+    "text": {
+      "type": "string",
+      "maxLength": 64000,
+      "description": "The whole document."
+    },
+    "rev": {
+      "$ref": "#/$defs/rev",
+      "description": "The saved document's rev. A build whose rev matches it (or a load without rev) comes back fresh; any other build comes back stale."
+    },
+    "lang": {
+      "$ref": "#/$defs/lang"
+    },
+    "detected": {
+      "type": "boolean",
+      "description": "true when lang was detected rather than set; the chip shows it."
+    },
+    "build": {
+      "$ref": "#/$defs/build"
+    },
     "runs": {
       "type": "array",
       "maxItems": 10,
       "description": "Newest last.",
-      "items": { "$ref": "#/$defs/run" }
+      "items": {
+        "$ref": "#/$defs/run"
+      }
     },
     "annotations": {
       "type": "array",
-      "items": { "$ref": "#/$defs/annotation" }
+      "items": {
+        "$ref": "#/$defs/annotation"
+      }
     },
-    "cursor": { "$ref": "#/$defs/pos" }
+    "cursor": {
+      "$ref": "#/$defs/pos"
+    }
   },
   "$defs": {
-    "rev": { "type": "integer", "minimum": 1, "description": "Document revision." },
-    "lang": { "type": "string", "pattern": "^[a-z0-9+#._-]{1,24}$", "description": "Free text, 1-24 characters: python, js, my-lang, pseudo." },
-    "line": { "type": "integer", "minimum": 1, "description": "1-based line." },
+    "rev": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Document revision."
+    },
+    "lang": {
+      "type": "string",
+      "pattern": "^[a-z0-9+#._-]{1,24}$",
+      "description": "Free text, 1-24 characters: python, js, my-lang, pseudo."
+    },
+    "line": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "1-based line."
+    },
     "pos": {
       "type": "object",
-      "required": ["line", "col"],
+      "required": [
+        "line",
+        "col"
+      ],
       "properties": {
-        "line": { "$ref": "#/$defs/line" },
-        "col": { "type": "integer", "minimum": 0, "description": "0-based column, in characters of the line." }
+        "line": {
+          "$ref": "#/$defs/line"
+        },
+        "col": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "0-based column, in characters of the line."
+        }
       }
     },
     "build": {
       "type": "object",
-      "required": ["rev", "lang", "code", "status"],
+      "required": [
+        "rev",
+        "lang",
+        "code",
+        "status"
+      ],
       "properties": {
-        "rev": { "$ref": "#/$defs/rev" },
-        "lang": { "$ref": "#/$defs/lang" },
-        "code": { "type": "string", "description": "The real program. May be empty while status is building or failed." },
-        "status": { "enum": ["building", "ready", "failed"] },
-        "file": { "type": "string" },
-        "notes": { "type": "string" },
-        "at": { "type": "integer", "minimum": 0, "description": "Epoch milliseconds when the build arrived." }
+        "rev": {
+          "$ref": "#/$defs/rev"
+        },
+        "lang": {
+          "$ref": "#/$defs/lang"
+        },
+        "code": {
+          "type": "string",
+          "description": "The real program. May be empty while status is building or failed."
+        },
+        "status": {
+          "enum": [
+            "building",
+            "ready",
+            "failed"
+          ]
+        },
+        "file": {
+          "type": "string"
+        },
+        "notes": {
+          "type": "string"
+        },
+        "at": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Epoch milliseconds when the build arrived."
+        }
       }
     },
     "run": {
       "type": "object",
-      "required": ["id", "rev", "status"],
+      "required": [
+        "id",
+        "rev",
+        "status"
+      ],
       "properties": {
-        "id": { "type": "string", "description": "r_<rev>_<n>, or an id Claude made up." },
-        "rev": { "$ref": "#/$defs/rev" },
-        "buildRev": { "type": ["integer", "null"], "minimum": 1 },
-        "lang": { "$ref": "#/$defs/lang" },
-        "at": { "type": "integer", "minimum": 0, "description": "Epoch milliseconds when the run started." },
-        "ms": { "type": ["integer", "null"], "minimum": 0 },
-        "exit": { "type": ["integer", "null"] },
-        "stdout": { "type": "string" },
-        "stderr": { "type": "string" },
-        "status": { "enum": ["running", "done", "failed", "lost"] }
+        "id": {
+          "type": "string",
+          "description": "r_<rev>_<n>, or an id Claude made up."
+        },
+        "rev": {
+          "$ref": "#/$defs/rev"
+        },
+        "buildRev": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1
+        },
+        "lang": {
+          "$ref": "#/$defs/lang"
+        },
+        "at": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Epoch milliseconds when the run started."
+        },
+        "ms": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "exit": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "stdout": {
+          "type": "string"
+        },
+        "stderr": {
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "running",
+            "done",
+            "failed",
+            "lost"
+          ]
+        }
       }
     },
     "annotation": {
       "type": "object",
-      "required": ["line", "text"],
+      "required": [
+        "line",
+        "text"
+      ],
       "properties": {
-        "line": { "$ref": "#/$defs/line" },
-        "kind": { "enum": ["note", "ok", "warn", "error"], "default": "note" },
-        "text": { "type": "string" }
+        "line": {
+          "$ref": "#/$defs/line"
+        },
+        "kind": {
+          "enum": [
+            "note",
+            "ok",
+            "warn",
+            "error"
+          ],
+          "default": "note"
+        },
+        "text": {
+          "type": "string"
+        }
       }
     }
   }
