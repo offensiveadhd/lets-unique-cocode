@@ -1,0 +1,10 @@
+{
+  "name": "lets-unique-cocode",
+  "version": "0.1.0",
+  "description": "cocode — talk in code: an editor for any language where Claude predicts the next lines, builds the real program ahead and runs it.",
+  "type": "module",
+  "private": true,
+  "license": "MIT",
+  "scripts": { "validate": "node scripts/validate.mjs" },
+  "repository": { "type": "git", "url": "https://github.com/TikoTikTok/lets-unique-cocode.git" }
+}

@@ -1,0 +1,29 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://lets.dev/schemas/uniques/cocode/suggest.json",
+  "title": "cocode.suggest (command)",
+  "description": "Show text as the ghost at the caret (or at \"at\"). Send the rev you answered. Chunks with the same re or rev and a seq append; done:true ends the stream. A ghost for an older rev shows only while the text before the caret still matches the prefix that rev reported, otherwise it is dropped silently. text \"\" clears the ghost. At most 12 lines; longer texts are cut.",
+  "type": "object",
+  "required": ["rev", "text"],
+  "properties": {
+    "rev": { "type": "integer", "minimum": 1, "description": "The revision this ghost answers." },
+    "text": { "type": "string", "description": "The next lines, in the human's dialect. If the caret is mid-line it starts with the rest of that line. \"\" clears." },
+    "at": {
+      "type": "object",
+      "description": "Where the ghost starts; defaults to the caret.",
+      "required": ["line", "col"],
+      "properties": {
+        "line": { "type": "integer", "minimum": 1, "description": "1-based line." },
+        "col": { "type": "integer", "minimum": 0, "description": "0-based column, in characters of the line." }
+      }
+    },
+    "alternatives": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Other ghosts, cycled with Alt+] and Alt+[. Two or three, only when the fork is real."
+    },
+    "reason": { "type": "string", "description": "A few words on why, shown in the status line." },
+    "seq": { "type": "integer", "minimum": 0, "description": "Chunk order when streaming; chunks append." },
+    "done": { "type": "boolean", "description": "true on the last chunk of a stream." }
+  }
+}

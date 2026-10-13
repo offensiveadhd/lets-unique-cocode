@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://lets.dev/schemas/uniques/cocode/build.json",
+  "title": "cocode.build (command)",
+  "description": "Put the real program in the Build pane. It replaces any earlier build; the pane marks it stale by itself once the editor's rev moves past this one. status defaults to ready. building shows a spinner and may carry no code. failed shows notes as the reason. Streams append code chunks.",
+  "type": "object",
+  "required": ["rev", "lang"],
+  "properties": {
+    "rev": { "type": "integer", "minimum": 1, "description": "The document revision this program was built for." },
+    "lang": { "type": "string", "pattern": "^[a-z0-9+#._-]{1,24}$", "description": "The language of the real program, e.g. python." },
+    "code": { "type": "string", "description": "The runnable program (a chunk when streaming)." },
+    "status": { "enum": ["building", "ready", "failed"], "default": "ready" },
+    "file": { "type": "string", "description": "A file name for the program, e.g. welcome.py." },
+    "notes": { "type": "string", "description": "Shown under the code; the reason when status is failed." },
+    "seq": { "type": "integer", "minimum": 0, "description": "Chunk order when streaming; code chunks append." },
+    "done": { "type": "boolean", "description": "true on the last chunk of a stream." }
+  },
+  "if": {
+    "required": ["status"],
+    "properties": { "status": { "enum": ["building", "failed"] } }
+  },
+  "else": {
+    "required": ["code"]
+  }
+}
