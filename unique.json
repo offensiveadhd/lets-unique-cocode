@@ -1,0 +1,120 @@
+{
+  "lip": 1,
+  "name": "cocode",
+  "version": "0.1.0",
+  "title": "Cocode — talk in code",
+  "description": "An editor for any language, even one that doesn't exist. Claude predicts your next lines as a ghost you accept with Tab, prepares the real program in the background so Run is instant, and reads what you send as a question, a task or a note.",
+  "entry": "ui/index.html",
+  "guide": "GUIDE.md",
+  "icon": "icon.svg",
+  "engine": ">=0.4.0",
+  "domains": [
+    "cocode"
+  ],
+  "capabilities": [
+    "entity",
+    "chat",
+    "components",
+    "clipboard"
+  ],
+  "events": {
+    "cocode.changed": {
+      "summary": "The text settled (500 ms): {rev, text, lang, detected, cursor, selection, lines, prefix, by: human|claude|restore, delta?}. Predict the next lines with cocode.suggest.",
+      "schema": "schemas/changed.json"
+    },
+    "cocode.ghost.accept": {
+      "summary": "The human accepted a ghost with Tab (or one word with Ctrl+Right): {rev, source: claude|local, text, partial}"
+    },
+    "cocode.ghost.reject": {
+      "summary": "The human dismissed a ghost: {rev, source, reason: esc|typed-away|moved}"
+    },
+    "cocode.ghost.request": {
+      "summary": "Suggest pressed (Alt+\\) or picked from Doto's menu: wants a ghost now: {rev, text, lang, cursor, prefix}"
+    },
+    "cocode.build.request": {
+      "summary": "The human asked for the real program in a target language (Build pane select or Prepare): {rev, text, lang, target: auto|<lang>}"
+    },
+    "cocode.run": {
+      "summary": "Run pressed (Ctrl+Enter): {run, rev, text, lang, build?}. Execute the build (or build first), stream cocode.output with this run id.",
+      "schema": "schemas/run.json"
+    },
+    "cocode.ask": {
+      "summary": "A question with the code: {question, rev, text, lang, line, selection?, source: toolbar|inline|menu}. Inline = a line starting with ?? ended with Enter.",
+      "schema": "schemas/ask.json"
+    },
+    "cocode.export": {
+      "summary": "\"Send to Claude\": {label, intent: auto|ask|explain|do|fix|review|note, text, lang, rev, cursor, selection?, build?, runs?, annotations?, stats}. A handoff: answer in the transcript.",
+      "schema": "schemas/export.json"
+    },
+    "cocode.snapshot": {
+      "summary": "Answer to the cocode.snapshot command (re = command id): the export payload without intent"
+    }
+  },
+  "commands": {
+    "cocode.suggest": {
+      "summary": "Show the next lines as a ghost at the caret: {rev, text, at?, alternatives?, reason?, seq?, done?}. Up to 12 lines; \"\" clears. Stale revs show only while the prefix still matches.",
+      "schema": "schemas/suggest.json"
+    },
+    "cocode.seed": {
+      "summary": "Starting points for an empty editor, from memory and sessions: {items:[{id, label, text, lang?, hint?}]} (max 6)"
+    },
+    "cocode.build": {
+      "summary": "The real program for a rev, prepared ahead: {rev, lang, code, status?: building|ready|failed, file?, notes?, seq?, done?}",
+      "schema": "schemas/build.json"
+    },
+    "cocode.output": {
+      "summary": "Run output: {run, stream: stdout|stderr|system, text, seq?, done?, exit?, ms?}; done:true with exit closes the run",
+      "schema": "schemas/output.json"
+    },
+    "cocode.insert": {
+      "summary": "Insert text, animated and undoable: {at: {line, col} | \"cursor\" | \"end\", text}"
+    },
+    "cocode.replace": {
+      "summary": "Replace lines from..to (1-based, inclusive) with text, animated and undoable: {from, to?, text}"
+    },
+    "cocode.set": {
+      "summary": "Replace the whole document (ask first): {text, lang?}. Undoable."
+    },
+    "cocode.lang": {
+      "summary": "Set the language chip: {lang}"
+    },
+    "cocode.annotate": {
+      "summary": "A gutter marker with a floating note on a line: {line, text, kind?: note|ok|warn|error}; text \"\" removes, line 0 clears all"
+    },
+    "cocode.highlight": {
+      "summary": "Glow lines from..to: {from, to?, color?, ttl?}; ttl default 4000, 0 keeps, from 0 clears"
+    },
+    "cocode.focus": {
+      "summary": "Scroll a line into view and put the caret there: {line, col?}"
+    },
+    "cocode.load": {
+      "summary": "Restore a document (the resume command): {text, lang?, build?, runs?, annotations?, cursor?}. Silent except one cocode.changed {by:\"restore\"}.",
+      "schema": "schemas/load.json"
+    },
+    "cocode.snapshot": {
+      "summary": "Ask the window for its state; it replies with a cocode.snapshot event"
+    }
+  },
+  "permissions": {
+    "fs.write": [],
+    "net": []
+  },
+  "session": {
+    "export": "cocode.export",
+    "snapshot": "cocode.snapshot",
+    "restore": "cocode.load"
+  },
+  "author": {
+    "name": "TikoTikTok",
+    "url": "https://github.com/TikoTikTok"
+  },
+  "license": "MIT",
+  "repository": "https://github.com/TikoTikTok/lets-unique-cocode",
+  "tags": [
+    "code",
+    "editor",
+    "predict",
+    "run",
+    "pseudo-code"
+  ]
+}

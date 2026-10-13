@@ -1,0 +1,209 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <title>Cocode — lets</title>
+  <link rel="icon" href="icon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/sdk/lets-shell.css">
+  <link rel="stylesheet" href="./style.css">
+</head>
+<body data-unique="cocode">
+<main id="app" class="cocode" data-rail="open">
+
+  <header id="topbar" class="topbar glass">
+    <nav id="toolbar" class="toolbar" role="toolbar" aria-label="Cocode tools">
+      <div class="tb-brand" title="cocode · lets">
+        <span id="status-dot" class="tb-dot" data-status="connecting" role="img" aria-label="Connecting to Claude"></span>
+        <span class="tb-name">cocode</span>
+      </div>
+
+      <div class="tb-group" role="group" aria-label="Language">
+        <button type="button" class="tb-btn tb-chip" id="lang-chip" data-act="lang" title="Language (click to set; empty = detect)" aria-label="Language: pseudo, detected. Press Enter to set it.">
+          <span id="lang-name">pseudo</span><span id="lang-mode" class="tb-sub">detected</span>
+        </button>
+        <form id="lang-form" class="lang-form" hidden autocomplete="off">
+          <label for="lang-input" class="sr-only">Language name</label>
+          <input id="lang-input" type="text" maxlength="24" placeholder="python, js, my-lang…" spellcheck="false">
+        </form>
+      </div>
+
+      <div class="tb-group" role="group" aria-label="Claude">
+        <button type="button" class="tb-btn tb-text" id="btn-suggest" data-act="suggest" title="Ask for the next lines now (Alt+\)" aria-label="Suggest the next lines">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h9"/><path d="m11 8 4 4-4 4"/><path d="M17 7v10" stroke-dasharray="2 2"/></svg>
+          <span>Suggest</span>
+        </button>
+        <button type="button" class="tb-btn tb-text" id="btn-run" data-act="run" title="Run the real program (Ctrl+Enter)" aria-label="Run">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 5.5v13l11-6.5z"/></svg>
+          <span>Run</span>
+        </button>
+        <button type="button" class="tb-btn tb-text" id="btn-ask" data-act="ask" aria-expanded="false" aria-controls="ask" title="Ask Claude about this line or selection (Ctrl+K)" aria-label="Ask Claude">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 5.5h14a1.5 1.5 0 0 1 1.5 1.5v8.5A1.5 1.5 0 0 1 19 17h-7l-4.5 3.5V17H5a1.5 1.5 0 0 1-1.5-1.5V7A1.5 1.5 0 0 1 5 5.5z"/><path d="M10 9.4a2 2 0 1 1 2.6 1.9c-.4.2-.6.5-.6.9v.4M12 14.3v.1"/></svg>
+          <span>Ask</span>
+        </button>
+        <label class="sr-only" for="intent">What you mean by sending this</label>
+        <select id="intent" class="tb-select" title="What you mean by sending this">
+          <option value="auto">you decide</option>
+          <option value="ask">a question</option>
+          <option value="explain">explain this</option>
+          <option value="do">do this</option>
+          <option value="fix">fix this</option>
+          <option value="review">review this</option>
+          <option value="note">just a note</option>
+        </select>
+        <button type="button" class="tb-btn tb-primary" id="btn-send" data-act="send" title="Send the code to Claude (Ctrl+Shift+Enter)" aria-label="Send to Claude">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m4 11.5 16-7-6.5 16-2.5-6.5z"/><path d="m11 14 9-9.5"/></svg>
+          <span>Send to Claude</span>
+        </button>
+      </div>
+
+      <div class="tb-group tb-end" role="group" aria-label="Panels">
+        <button type="button" class="tb-btn" id="btn-undo" data-act="undo" title="Undo (Ctrl+Z)" aria-label="Undo" disabled>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6.5 4.5 11 9 15.5"/><path d="M5 11h9.5a5 5 0 0 1 0 10H12"/></svg>
+        </button>
+        <button type="button" class="tb-btn" id="btn-redo" data-act="redo" title="Redo (Ctrl+Y)" aria-label="Redo" disabled>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m15 6.5 4.5 4.5-4.5 4.5"/><path d="M19 11H9.5a5 5 0 0 0 0 10H12"/></svg>
+        </button>
+        <button type="button" class="tb-btn tb-text" id="btn-build" data-act="build" aria-pressed="true" title="Build pane (Ctrl+B)" aria-label="Toggle the Build pane">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6.5h16v11H4z"/><path d="M8 10.5h8M8 13.5h5"/></svg>
+          <span>Build</span>
+        </button>
+        <button type="button" class="tb-btn tb-text" id="btn-output" data-act="output" aria-pressed="true" title="Output pane (Ctrl+J)" aria-label="Toggle the Output pane">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6.5h16v11H4z"/><path d="m7.5 10 2.5 2-2.5 2M12 14h4"/></svg>
+          <span>Output</span>
+        </button>
+        <button type="button" class="tb-btn" data-act="chat" title="Toggle chat (Ctrl+/)" aria-label="Toggle chat">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5.5h11a1.5 1.5 0 0 1 1.5 1.5v6A1.5 1.5 0 0 1 15 14.5H9l-3.5 3v-3H4A1.5 1.5 0 0 1 2.5 13V7A1.5 1.5 0 0 1 4 5.5z"/><path d="M16.5 9H20a1.5 1.5 0 0 1 1.5 1.5v6A1.5 1.5 0 0 1 20 18h-1v2.5L16 18h-4.5"/></svg>
+        </button>
+        <button type="button" class="tb-btn" data-act="entity" title="Show or hide your companion (Ctrl+Space)" aria-label="Toggle companion">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12.5" r="7"/><path d="M9.6 11.3v1.8M14.4 11.3v1.8"/><path d="M5 5.5a9.8 9.8 0 0 1 14 0" stroke-opacity=".5"/></svg>
+        </button>
+        <button type="button" class="tb-btn" id="btn-help" data-act="help" aria-expanded="false" aria-controls="help" title="Shortcuts (?)" aria-label="Keyboard shortcuts">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><path d="M9.6 9.6a2.5 2.5 0 1 1 3.4 2.3c-.6.3-1 .8-1 1.4v.5M12 16.6v.1"/></svg>
+        </button>
+      </div>
+    </nav>
+
+    <form id="ask" class="ask" hidden autocomplete="off">
+      <div class="ask-row">
+        <span id="ask-about" class="ask-chip" title="What the question is about">line 1</span>
+        <label for="ask-input" class="sr-only">Question for Claude</label>
+        <input id="ask-input" type="text" maxlength="500" placeholder="Ask about this line, the selection, or the whole thing…">
+        <button type="submit" class="tb-btn tb-primary"><span>Ask</span></button>
+      </div>
+    </form>
+  </header>
+
+  <div id="work" class="work">
+    <section id="editor" class="editor" aria-label="Editor">
+      <div id="scroller" class="scroller">
+        <div id="gutter" class="gutter" aria-hidden="true"></div>
+        <div id="surface" class="surface">
+          <div id="glows" class="glows" aria-hidden="true"></div>
+          <div id="curline" class="curline" aria-hidden="true"></div>
+          <pre id="layer" class="layer" aria-hidden="true"></pre>
+          <textarea id="code" class="code" aria-label="Code" spellcheck="false" autocapitalize="off" autocomplete="off" autocorrect="off" wrap="off" placeholder=""></textarea>
+          <div id="ghost-block" class="ghost-block glass" hidden aria-hidden="true"></div>
+        </div>
+      </div>
+
+      <div id="empty" class="empty">
+        <p class="empty-title">Type in any language. Even one that doesn't exist.</p>
+        <p class="empty-sub lets-dim">Tab accepts a suggestion · Ctrl+Enter runs the real program · Ctrl+K asks</p>
+        <div id="seeds" class="seeds" role="list" aria-label="Start from"></div>
+      </div>
+
+      <div id="note-pop" class="note-pop glass" hidden role="note"></div>
+
+      <footer id="statusline" class="statusline lets-dim" aria-live="off">
+        <span id="st-pos">Ln 1, Col 0</span>
+        <span class="st-sep">·</span><span id="st-lines">1 line</span>
+        <span class="st-sep">·</span><span>rev <b id="st-rev">1</b></span>
+        <span class="st-sep">·</span><span>ghost: <b id="st-ghost">—</b></span>
+        <span class="st-sep">·</span><span>build: <b id="st-build">—</b></span>
+      </footer>
+    </section>
+
+    <aside id="rail" class="rail" aria-label="Build and output">
+      <div class="rail-tabs" role="tablist" aria-label="Panes">
+        <button type="button" class="rail-tab" role="tab" id="tab-build" aria-selected="true" aria-controls="pane-build">Build</button>
+        <button type="button" class="rail-tab" role="tab" id="tab-output" aria-selected="false" aria-controls="pane-output">Output</button>
+      </div>
+
+      <section class="pane glass" id="pane-build" data-pane="build" aria-labelledby="h-build" role="tabpanel">
+        <header class="pane-head">
+          <h2 id="h-build"><button type="button" class="pane-toggle" aria-expanded="true" aria-controls="body-build"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m8 10 4 4 4-4"/></svg><span>Build</span></button></h2>
+          <span class="pill" id="build-pill" data-state="none">—</span>
+          <div class="pane-tools">
+            <label class="sr-only" for="target">Target language</label>
+            <select id="target" class="tb-select" title="Target language for the real program">
+              <option value="auto">auto</option>
+              <option value="python">python</option>
+              <option value="javascript">javascript</option>
+              <option value="typescript">typescript</option>
+              <option value="bash">bash</option>
+              <option value="go">go</option>
+              <option value="rust">rust</option>
+              <option value="other">other…</option>
+            </select>
+            <button type="button" class="lets-btn lets-btn-sm" id="btn-prepare" title="Ask Claude to prepare the real program now">Prepare</button>
+            <button type="button" class="lets-btn lets-btn-sm lets-btn-ghost" id="btn-copy" title="Copy the real program" disabled>Copy</button>
+          </div>
+        </header>
+        <div class="pane-body" id="body-build">
+          <p class="empty-pane lets-dim" id="build-empty">Nothing built yet. Claude prepares the real program here while you type, so Run is instant.</p>
+          <div class="build-meta lets-dim" id="build-meta" hidden></div>
+          <pre class="lets-pre build-code" id="build-code" hidden></pre>
+          <p class="build-notes" id="build-notes" hidden></p>
+        </div>
+      </section>
+
+      <section class="pane glass" id="pane-output" data-pane="output" aria-labelledby="h-output" role="tabpanel">
+        <header class="pane-head">
+          <h2 id="h-output"><button type="button" class="pane-toggle" aria-expanded="true" aria-controls="body-output"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m8 10 4 4 4-4"/></svg><span>Output</span></button></h2>
+          <span class="pill" id="run-pill" data-state="none">—</span>
+          <div class="pane-tools">
+            <button type="button" class="lets-btn lets-btn-sm lets-btn-ghost" id="btn-clear-runs" title="Clear finished runs">Clear</button>
+          </div>
+        </header>
+        <div class="pane-body" id="body-output">
+          <p class="empty-pane lets-dim" id="runs-empty">No runs yet. Ctrl+Enter runs the real program; the output lands here.</p>
+          <div class="runs" id="runs" aria-live="polite"></div>
+          <div class="notes" id="notes" hidden>
+            <h3>Notes</h3>
+            <ul id="notes-list"></ul>
+          </div>
+        </div>
+      </section>
+    </aside>
+  </div>
+
+  <section id="help" class="help glass" hidden aria-label="Keyboard shortcuts">
+    <h2>Shortcuts</h2>
+    <dl>
+      <dt>Tab</dt><dd>accept the ghost · otherwise indent</dd>
+      <dt>Ctrl+→</dt><dd>accept the ghost's first word</dd>
+      <dt>Alt+] · Alt+[</dt><dd>next · previous alternative</dd>
+      <dt>Esc</dt><dd>dismiss the ghost, then close things</dd>
+      <dt>Alt+\</dt><dd>ask for a ghost now</dd>
+      <dt>Ctrl+Enter</dt><dd>run the real program</dd>
+      <dt>Ctrl+K</dt><dd>ask about this line or selection</dd>
+      <dt>?? …</dt><dd>a line starting with ?? asks when you press Enter</dd>
+      <dt>Ctrl+Shift+Enter</dt><dd>send to Claude</dd>
+      <dt>Ctrl+Z · Ctrl+Y</dt><dd>undo · redo</dd>
+      <dt>Ctrl+D · Alt+↑↓</dt><dd>duplicate · move lines</dd>
+      <dt>Ctrl+;</dt><dd>comment the line</dd>
+      <dt>Ctrl+B · Ctrl+J</dt><dd>Build pane · Output pane</dd>
+      <dt>Ctrl+M</dt><dd>Tab moves focus instead (toggle)</dd>
+      <dt>Right-click · Ctrl+Space</dt><dd>call your companion</dd>
+      <dt>Ctrl+/</dt><dd>chat with Claude</dd>
+    </dl>
+  </section>
+
+  <div id="d-toast" class="d-toast" role="status" aria-live="polite"></div>
+  <div id="sr-live" class="sr-only" aria-live="polite"></div>
+</main>
+<script type="module" src="./cocode.js"></script>
+</body>
+</html>

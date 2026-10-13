@@ -1,0 +1,107 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://lets.dev/schemas/uniques/cocode/export.json",
+  "title": "cocode.export (event)",
+  "description": "Send to Claude: a handoff. The engine saves it as a session and closes the window. Also the shape of the cocode.snapshot reply, which is the same payload without intent: that is why intent is optional here (always present on cocode.export, absent on the snapshot). The engine may add a session id.",
+  "type": "object",
+  "required": ["label", "text", "lang", "rev", "cursor", "stats"],
+  "properties": {
+    "session": { "type": "string", "description": "The saved session's id. Added by the engine when it stores the handoff; not sent by the page." },
+    "label": { "type": "string", "minLength": 1, "description": "The first non-empty line (at most 60 characters) plus the language, e.g. \"for each user in users · pseudo\". The saved session's summary." },
+    "intent": {
+      "enum": ["auto", "ask", "explain", "do", "fix", "review", "note"],
+      "description": "What the human picked in the select: auto means you decide. Present on cocode.export, absent on the cocode.snapshot reply."
+    },
+    "text": { "$ref": "#/$defs/text" },
+    "truncated": { "type": "boolean", "description": "true when text was longer than 64 000 characters; the tail is kept." },
+    "lang": { "$ref": "#/$defs/lang" },
+    "rev": { "$ref": "#/$defs/rev" },
+    "cursor": { "$ref": "#/$defs/pos" },
+    "selection": {
+      "oneOf": [{ "$ref": "#/$defs/selection" }, { "type": "null" }],
+      "description": "The selected range, when there is one."
+    },
+    "build": { "$ref": "#/$defs/build" },
+    "runs": {
+      "type": "array",
+      "maxItems": 3,
+      "description": "At most the last 3 runs, newest last, with output tails of at most 2 000 characters.",
+      "items": { "$ref": "#/$defs/run" }
+    },
+    "annotations": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/annotation" }
+    },
+    "stats": {
+      "type": "object",
+      "description": "Ghost feedback so far in this window.",
+      "required": ["accepted", "rejected", "acceptedLocal"],
+      "properties": {
+        "accepted": { "type": "integer", "minimum": 0, "description": "Ghosts accepted, either source." },
+        "rejected": { "type": "integer", "minimum": 0 },
+        "acceptedLocal": { "type": "integer", "minimum": 0, "description": "Of the accepted ones, how many came from the local predictor." }
+      }
+    }
+  },
+  "$defs": {
+    "rev": { "type": "integer", "minimum": 1, "description": "Document revision; starts at 1 and never goes down." },
+    "text": { "type": "string", "maxLength": 64000, "description": "The whole document." },
+    "lang": { "type": "string", "pattern": "^[a-z0-9+#._-]{1,24}$", "description": "Free text, 1-24 characters: python, js, my-lang, pseudo." },
+    "line": { "type": "integer", "minimum": 1, "description": "1-based line." },
+    "pos": {
+      "type": "object",
+      "required": ["line", "col"],
+      "properties": {
+        "line": { "$ref": "#/$defs/line" },
+        "col": { "type": "integer", "minimum": 0, "description": "0-based column, in characters of the line." }
+      }
+    },
+    "selection": {
+      "type": "object",
+      "required": ["from", "to"],
+      "properties": {
+        "from": { "$ref": "#/$defs/pos" },
+        "to": { "$ref": "#/$defs/pos" }
+      }
+    },
+    "build": {
+      "type": "object",
+      "description": "The latest build, stale or not (build.rev < rev means stale).",
+      "required": ["rev", "lang", "code", "status"],
+      "properties": {
+        "rev": { "$ref": "#/$defs/rev" },
+        "lang": { "$ref": "#/$defs/lang" },
+        "code": { "type": "string", "description": "The real program. May be empty while status is building or failed." },
+        "status": { "enum": ["building", "ready", "failed"] },
+        "file": { "type": "string" },
+        "notes": { "type": "string" },
+        "at": { "type": "integer", "minimum": 0, "description": "Epoch milliseconds when the build arrived." }
+      }
+    },
+    "run": {
+      "type": "object",
+      "required": ["id", "rev", "status"],
+      "properties": {
+        "id": { "type": "string", "description": "r_<rev>_<n>, or an id Claude made up." },
+        "rev": { "$ref": "#/$defs/rev" },
+        "buildRev": { "type": ["integer", "null"], "minimum": 1, "description": "The build rev that ran; null when it ran without one." },
+        "lang": { "$ref": "#/$defs/lang" },
+        "at": { "type": "integer", "minimum": 0, "description": "Epoch milliseconds when the run started." },
+        "ms": { "type": ["integer", "null"], "minimum": 0, "description": "Duration; null until the run is closed." },
+        "exit": { "type": ["integer", "null"], "description": "Exit code; null until the run is closed." },
+        "stdout": { "type": "string", "maxLength": 2000, "description": "Output tail." },
+        "stderr": { "type": "string", "maxLength": 2000, "description": "Output tail." },
+        "status": { "enum": ["running", "done", "failed", "lost"], "description": "lost = no output for 60 s." }
+      }
+    },
+    "annotation": {
+      "type": "object",
+      "required": ["line", "text"],
+      "properties": {
+        "line": { "$ref": "#/$defs/line" },
+        "kind": { "enum": ["note", "ok", "warn", "error"], "default": "note" },
+        "text": { "type": "string" }
+      }
+    }
+  }
+}

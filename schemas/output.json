@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://lets.dev/schemas/uniques/cocode/output.json",
+  "title": "cocode.output (command)",
+  "description": "Append run output to the run named by run in the Output pane. A run id the window never issued creates an entry named by Claude. done:true closes the run: exit 0 shows ok, anything else failed. Always close the run. Chunks are ordered by seq when present.",
+  "type": "object",
+  "required": ["run", "stream", "text"],
+  "properties": {
+    "run": { "type": "string", "minLength": 1, "description": "The run id from cocode.run (r_<rev>_<n>)." },
+    "stream": { "enum": ["stdout", "stderr", "system"], "description": "system lines render dim, e.g. \"building first...\"." },
+    "text": { "type": "string", "description": "The chunk. May be empty on the closing message." },
+    "seq": { "type": "integer", "minimum": 0, "description": "Chunk order." },
+    "done": { "type": "boolean", "description": "true closes the run." },
+    "exit": { "type": "integer", "description": "Exit code, with done:true. 0 is ok, anything else is failed." },
+    "ms": { "type": "integer", "minimum": 0, "description": "How long the run took, shown when given." }
+  }
+}
