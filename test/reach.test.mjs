@@ -56,9 +56,68 @@ test('pseudo-code without parentheses, and shell lines', () => {
   assert.equal(one('! dir').kind, 'shell');
   none('$x = 1', 'php');
   none('$x=1');
-  none('search the list for the max', 'pseudo');
-  none('open the file', 'pseudo');
   none('ping', 'pseudo');
+  none('ping:', 'pseudo');
+});
+
+test('invented syntax: separators, brackets, case, bullets', () => {
+  for (const line of ['ping: google.com', 'ping -> google.com', 'ping => google.com', 'ping = google.com', '(ping "google.com")', '[ping google.com]', 'PING google.com', 'Ping! google.com', '- ping google.com', '3. ping google.com', '> ping google.com']) {
+    const r = one(line, 'my-lang');
+    assert.equal(r.kind, 'net', line);
+    assert.equal(r.name, 'ping', line);
+    assert.deepEqual(r.args, ['google.com'], line);
+  }
+  assert.equal(one('{ curl https://example.com/api }', 'brace-lang').name, 'curl');
+});
+
+test('natural phrases in any language', () => {
+  assert.equal(one('go to https://example.com', 'pseudo').kind, 'browser');
+  assert.equal(one('open google.com', 'pseudo').kind, 'browser');
+  assert.deepEqual(one('1. visit https://example.com/docs').args, ['https://example.com/docs']);
+  assert.equal(one('show me www.example.com').kind, 'browser');
+  assert.equal(one('open the browser on https://example.com').kind, 'browser');
+  assert.equal(one('screenshot https://example.com').name, 'screenshot');
+  assert.equal(one('download https://example.com/file.zip').kind, 'net');
+  assert.equal(one('get https://api.example.com/users').name, 'fetch');
+  assert.equal(one('search the web for best ssd 2026').kind, 'search');
+  assert.equal(one('google best ssd 2026').kind, 'search');
+  assert.equal(one('find out who maintains lodash').kind, 'research');
+  assert.deepEqual(one('research: the history of morse code').args, ['the history of morse code']);
+  assert.equal(one('investigate the slow query').kind, 'research');
+  assert.equal(one('spawn an agent to review the repo').kind, 'agent');
+  assert.equal(one('agent: summarize the changelog').kind, 'agent');
+  assert.equal(one('delegate the review').kind, 'agent');
+  assert.equal(one('hermes review this driver').kind, 'hermes');
+  assert.equal(one('ask kimi to check the math').name, 'kimi');
+  assert.equal(one('shell: ls -la').kind, 'shell');
+  assert.equal(one('run the command dir').kind, 'shell');
+  assert.deepEqual(one('run `dir /b`').args, ['dir /b']);
+  assert.equal(one('notify me when done').kind, 'say');
+  // not reaches: local verbs, no URL, plain prose
+  none('open the file', 'pseudo');
+  none('get the user from the db', 'pseudo');
+  none('show results', 'pseudo');
+  none('search the list for the max', 'pseudo');
+  none('search for the max', 'pseudo');
+  none('lookup table[i]', 'pseudo');
+  none('execute the plan', 'pseudo');
+  none('run tests', 'pseudo');
+  none('read the config', 'pseudo');
+  none('for each user in users:', 'pseudo');
+  none('if ping is low then warn', 'pseudo');
+});
+
+test('claude addressed by name: the next word is the verb', () => {
+  assert.deepEqual(one('claude, ping google.com'), { line: 1, kind: 'net', name: 'claude.ping', args: ['google.com'], raw: 'claude, ping google.com' });
+  assert.equal(one('ask claude to research the history of morse').kind, 'research');
+  assert.equal(one('ask claude to research the history of morse').name, 'claude.research');
+  assert.equal(one('claude: open https://example.com').kind, 'browser');
+  assert.deepEqual(one('claude: open https://example.com').args, ['https://example.com']);
+  assert.equal(one('tell claude hello').kind, 'claude');
+  assert.equal(one('tell claude hello').name, 'claude.hello');
+  assert.equal(one('let claude search the web for cheap flights').kind, 'search');
+  assert.equal(one('claude please find out who maintains lodash').kind, 'research');
+  assert.equal(one('Claude -> shell ls -la').kind, 'shell');
 });
 
 test('comments and ?? lines are skipped', () => {

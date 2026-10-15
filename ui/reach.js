@@ -8,15 +8,22 @@
  * who performs each one for real with his own tools and streams what happened
  * (CONTRACT.md §10, GUIDE.md "Reach"). Nothing here runs anything.
  *
- * Three spellings, in any language, real or invented:
+ * The spellings, in any language, real, invented or prose-like:
  *   claude.<verb>(…)  /  claude_<verb>(…)     the explicit namespace: any verb counts
  *   <verb>(…)                                  a bare verb from the vocabulary (VERBS)
- *   <verb> <argument>                           pseudo-code: `ping google.com`, `browse https://…`, `$ ls`
+ *   <verb> <argument>                           pseudo-code: `ping google.com`, `ping: google.com`,
+ *                                               `(ping "google.com")`, `PING -> google.com`
+ *   natural phrases                             `go to https://…`, `open google.com`, `search the web for …`,
+ *                                               `find out who maintains lodash`, `claude, ping google.com`,
+ *                                               `ask claude to research …`, `spawn an agent to …`, `shell: ls`
+ *   $ cmd  /  ! cmd                             a shell line
  * plus the real libraries a language's sandbox would block (`requests`, `socket`,
  * `subprocess`, `child_process`, `webbrowser`, …). A verb the document defines
  * itself (`def ping(host):`) is the human's own function, not a reach, and a
  * verb the language's sandbox performs itself (`fetch` in javascript) is not
- * one either. Line heuristics only, no parser; never throws.
+ * one either. Line heuristics only, no parser; never throws. This scan is a
+ * hint for the window and for Claude: an invented language can phrase a reach
+ * in words no regex knows, and the guide tells Claude to read for those too.
  *
  * Plain ES module; no dependencies. Also runs in Node (the unit test).
  */
@@ -77,7 +84,6 @@ const LIBS = {
 
 const VERB_RE = new RegExp(`(?<![\\w.$])(${[...VERBS.keys()].map((v) => v.replace('.', '\\.')).join('|')})\\s*\\(`, 'g');
 const NS_RE = /\bclaude[._]([A-Za-z_][\w.]*?)\s*\(/g;
-const BARE_RE = /^\s*(ping|traceroute|tracert|nslookup|dig|whois|curl|wget|browse|visit|research|hermes)\s+(\S.*)$/i;
 const SHELL_RE = /^\s*[$!] +(\S.*)$/;
 const SKIP_RE = /^\s*(?:#|\/\/|--|;|\/\*|\*|<!--|\?\?)/;
 const DEF_RES = [
@@ -85,6 +91,35 @@ const DEF_RES = [
   /^\s*(?:export\s+)?(?:const|let|var)\s+([A-Za-z_]\w*)\s*=\s*(?:async\s*)?(?:\(|function\b|[A-Za-z_]\w*\s*=>)/,
   /^\s*([A-Za-z_]\w*)\s*=\s*lambda\b/,
 ];
+
+/*
+ * Natural forms: the line starts (after indentation, a bullet or a number, an optional opening
+ * bracket) with a verb or a phrase and an argument. The separator between them may be a space,
+ * `:`, `=`, `!`, `->`, `=>` or `<-`, so `ping: google.com`, `(ping "google.com")` and
+ * `PING -> google.com` all read as `ping google.com`. Case does not matter. Each entry:
+ * [pattern, kind, name|null]; a null name takes the matched verb (lower-cased).
+ */
+const LEAD = String.raw`^\s*(?:[-•>]\s+|\d+[.)]\s+)?[(\[{]?\s*`;
+const SEP = String.raw`\s*(?:->|=>|<-|[:=!])?\s*(?!->|=>|<-|[:=!>])`;   // the two-character arrows first; the argument never starts with a separator
+const URL = String.raw`(?:https?://\S+|www\.\S+|[\w-]+(?:\.[\w-]+)*\.(?:com|org|net|io|dev|edu|gov|co|uk|de|il|info|app|ai|me|xyz|fr|es|it|nl|ch|us|ca|au|jp|cn|ru)\b\S*)`;
+const nat = (s) => new RegExp(`${LEAD}${s}\\s*$`, 'i');
+const NATURAL = [
+  [nat(`(ping|traceroute|tracert|nslookup|dig|whois|curl|wget)${SEP}(\\S.*)`), 'net', null],
+  [nat(`(?:fetch|download|get|request|call|hit|post|read|load)\\s+(?:the\\s+)?(?:page\\s+|url\\s+|from\\s+|at\\s+)?(${URL}.*)`), 'net', 'fetch'],
+  [nat(`(?:browse|visit|navigate(?:\\s+to)?|go\\s*to|goto|open|show(?:\\s+me)?)\\s+(?:the\\s+)?(?:page\\s+|site\\s+|url\\s+|at\\s+)?(${URL}.*)`), 'browser', 'browser'],
+  [nat(`(?:open|launch|start)\\s+(?:the\\s+|a\\s+|claude'?s\\s+)?browser\\b${SEP}(.*)`), 'browser', 'browser'],
+  [nat(`screenshot\\s+(?:of\\s+)?(\\S.*)`), 'browser', 'screenshot'],
+  [nat(`(?:search\\s+(?:the\\s+)?(?:web|internet|online|google)(?:\\s+for)?|google|web\\s*search)${SEP}(\\S.*)`), 'search', 'search'],
+  [nat(`(?:research|investigate|find\\s+out\\s+(?:about|who|what|why|how|where|when|which)|deep[\\s-]?dive(?:\\s+(?:into|on))?)${SEP}(\\S.*)`), 'research', 'research'],
+  [nat(`(?:delegate|spawn\\s+(?:an?\\s+)?(?:sub)?agent(?:\\s+to)?|(?:ask|have|use)\\s+(?:an?\\s+)?(?:sub)?agent(?:\\s+to)?|(?:sub)?agent)${SEP}(\\S.*)`), 'agent', 'agent'],
+  [nat(`(?:(?:ask|use|tell)\\s+)?(hermes|glm|kimi)(?:\\s+to)?${SEP}(\\S.*)`), 'hermes', null],
+  [nat(`(?:run|execute|exec)\\s+(?:the\\s+)?(?:command|cmd|shell)${SEP}(\\S.*)`), 'shell', 'shell'],
+  [nat(`(?:shell|sh|bash|cmd|powershell|terminal)\\s*:\\s*(\\S.*)`), 'shell', 'shell'],
+  [nat('(?:run|exec(?:ute)?)\\s+`([^`]+)`.*'), 'shell', 'shell'],
+  [nat(`(?:notify|alert)\\s+me${SEP}(.*)`), 'say', 'say'],
+];
+/** `claude, ping google.com` · `ask claude to research …` · `claude: open https://…` · `tell claude hello`: the verb is the next word. */
+const CLAUDE_RE = nat(`(?:ask|tell|let|have|make|get)?\\s*claude\\b\\s*(?:->|=>|<-|[,:._!=])?\\s*(?:to\\s+|please\\s+)?(\\S.*)`);
 
 /**
  * @typedef {{line:number, kind:string, name:string, args:string[], raw:string}} Reach
@@ -123,9 +158,8 @@ export function scanReach(text, lang = 'pseudo') {
       found.push({ index: m.index, end: m.index + m[0].length, name, kind, lib: true });
     }
     if (!found.length) {
-      let m = BARE_RE.exec(line);
-      if (m && !defined.has(m[1].toLowerCase())) out.push(reach(i + 1, VERBS.get(m[1].toLowerCase()) || 'net', m[1].toLowerCase(), [m[2].trim()], line));
-      else if ((m = SHELL_RE.exec(line))) out.push(reach(i + 1, 'shell', '$', [m[1].trim()], line));
+      const n = natural(line, defined);
+      if (n) out.push(reach(i + 1, n.kind, n.name, [n.arg], line));
       continue;
     }
     found.sort((a, b) => a.index - b.index);
@@ -149,8 +183,38 @@ export function explainReach(r) {
   return `${describeReach(r)} — reaches ${what}. Claude does it for real when you Run.`;
 }
 
+/** A line in words (no call syntax): a natural form, a shell line, or Claude addressed by name. */
+function natural(line, defined) {
+  const sh = SHELL_RE.exec(line);
+  if (sh) return { kind: 'shell', name: '$', arg: sh[1].trim() };
+  const c = CLAUDE_RE.exec(line);
+  if (c) {
+    const rest = tidy(c[1]);
+    const first = (rest.split(/\s+/)[0] || '').toLowerCase().replace(/[^a-z_.]/g, '');
+    const inner = first ? naturalPhrase(rest, defined) : null;
+    const kind = VERBS.get(first) || inner?.kind || 'claude';
+    const arg = VERBS.has(first) ? tidy(rest.slice(first.length)) : inner ? inner.arg : rest;
+    return { kind, name: `claude.${first || 'do'}`, arg };
+  }
+  return naturalPhrase(line, defined);
+}
+function naturalPhrase(line, defined) {
+  for (const [re, kind, fixed] of NATURAL) {
+    const m = re.exec(line);
+    if (!m) continue;
+    const verb = fixed || (m[1] || '').toLowerCase();
+    if (!fixed && defined.has(verb)) continue;
+    const arg = tidy(fixed ? m[1] : m[2]);
+    if (!arg && kind !== 'browser') continue;
+    return { kind, name: verb, arg };
+  }
+  return null;
+}
+/** Trims an argument written in words: trailing closers and punctuation, outer quotes. */
+function tidy(s) { return unquote(String(s ?? '').trim().replace(/[)\]}.;,]+$/, '').trim()); }
+
 function reach(line, kind, name, args, raw) {
-  return { line, kind, name: clip(name, 60), args: args.slice(0, 8).map((a) => clip(a, 200)), raw: clip(raw.trim(), 200) };
+  return { line, kind, name: clip(name, 60), args: args.filter((a) => a).slice(0, 8).map((a) => clip(a, 200)), raw: clip(raw.trim(), 200) };
 }
 function clip(s, n) { const t = String(s ?? ''); return t.length > n ? `${t.slice(0, n - 1)}…` : t; }
 

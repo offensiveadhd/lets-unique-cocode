@@ -46,7 +46,7 @@ for (const [kind, map] of [['events', manifest.events], ['commands', manifest.co
   if (decl.schema) { try { read(decl.schema); } catch (e) { problems.push(`${kind}.${t}: schema ${decl.schema}: ${e.message}`); } }
 }
 const words = fs.readFileSync(path.join(root, manifest.guide || 'GUIDE.md'), 'utf8').split(/\s+/).length;
-if (words > 1700) problems.push(`GUIDE.md is ${words} words; keep it under ~1700`);   // 0.3.0: the reach table earned the room over the old ~1500
+if (words > 1800) problems.push(`GUIDE.md is ${words} words; keep it under ~1800`);   // 0.3.x: the reach section and its table earned the room over the old ~1500
 
 if (problems.length) { console.error('✘ ' + problems.join('\n✘ ')); process.exit(1); }
 console.log(`ok: ${manifest.name}@${manifest.version} — ${Object.keys(manifest.events || {}).length} events, ${Object.keys(manifest.commands || {}).length} commands, guide ${words} words`);

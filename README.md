@@ -45,10 +45,15 @@ Write it any way you like, in any language:
 ```
 ping('google.com')                  # a bare verb: ping, dns, fetch, curl, browser, search, research, agent, hermes, shell, say, ask
 claude.browser('https://example.com')   # the claude namespace: any verb, claude.whatever(...) included
-research the history of morse code  # pseudo-code, no parentheses: ping, browse, research, curl, whois, hermes
+ping: google.com                    # pseudo-code, no parentheses, any separator or bracket: (ping "google.com"), PING -> google.com
+go to https://example.com           # natural phrases: open google.com, search the web for …, find out who maintains lodash,
+spawn an agent to review the repo   #   investigate …, agent: …, hermes …, shell: ls, run the command dir, notify me when done
+claude, research the history of morse code   # Claude by name: the next word is the verb (ask claude to …, claude: open https://…)
 $ dir                                # a shell line
 r = requests.get(url)                # the real library the sandbox would block (python: requests, socket, subprocess, os.system, webbrowser…)
 ```
+
+The window's scan is a hint. Your language may phrase a reach in words no regex knows (`pingen google`), so Claude also reads the program for reaches himself and treats one he finds exactly like a listed one. And the build goes on as before: Claude still works out what the real program looks like in the Build pane, whatever your dialect, writing each reach as `claude.<verb>(…)` so you can see what he will do.
 
 The window marks each reach with a small cyan diamond in the gutter (hover it: *`ping google.com` — reaches the network. Claude does it for real when you Run.*), the status line counts them, and **Run** skips the local runner whatever the language: the run entry gets a `reach · N` badge, Claude performs each reach in the program's order with the matching tool (the real `ping`, the app's browser pane with the tab left open for you, a web search, a sub-agent, the local Hermes agent, Bash, the chat), names each one in cyan as he goes (`→ ping google.com`), and streams the real output. The pure parts of the program still run in the sandbox. A reach that would change the world (send, post, delete, pay) waits for your yes in chat; probing someone else's security is refused. Claude Code's own permission prompts stand for every tool he calls.
 

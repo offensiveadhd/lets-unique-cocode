@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.3.1 — 2026-10-15
+
+Reach in any spelling. The 0.3.0 scanner knew `ping(host)` and `ping google.com`; a human writing pseudo-code or an invented language says it in more ways, and some in words no regex knows.
+
+- **Scanner (`ui/reach.js`):** the parenless form takes any separator or bracket and any case (`ping: google.com`, `PING -> google.com`, `(ping "google.com")`, `- curl https://x`, `3. whois x.org`); natural phrases at the start of a line count (`go to https://x`, `open google.com`, `show me www.x.com`, `open the browser on …`, `screenshot …`, `download https://…`, `get https://api/…`, `search the web for …`, `google …`, `find out who maintains lodash`, `investigate …`, `spawn an agent to …`, `agent: …`, `delegate …`, `hermes …`, `ask kimi to …`, `shell: ls`, `run the command dir`, ``run `dir` ``, `notify me when done`); and Claude addressed by name takes the next word as the verb (`claude, ping google.com`, `ask claude to research …`, `claude: open https://x`, `tell claude hello` → `claude.hello`). The local verbs of pseudo-code stay local (`open the file`, `search the list for the max`, `get the user from the db`, `run tests`). 12 unit tests.
+- **Guide:** the window's `reach` is a hint, not the whole truth: Claude reads the program for reaches himself, in any language, and treats one he finds like a listed one; the build is made as always, with each reach written as `claude.<verb>(args)`; a `cocode.ran` failure with a `NameError`/`ReferenceError` on a name that means a reach counts as a missed reach too. The guide is ~1 770 words; the validator's cap is now 1 800.
+
 ## 0.3.0 — 2026-10-15
 
 Reach. A line that asks for what no sandbox can do is done for real by Claude instead of being stubbed into a print.
