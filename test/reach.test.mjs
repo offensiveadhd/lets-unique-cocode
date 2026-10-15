@@ -82,6 +82,10 @@ test('natural phrases in any language', () => {
   assert.equal(one('search the web for best ssd 2026').kind, 'search');
   assert.equal(one('google best ssd 2026').kind, 'search');
   assert.equal(one('find out who maintains lodash').kind, 'research');
+  assert.deepEqual(one('find out who maintains lodash').args, ['who maintains lodash']);
+  assert.deepEqual(one('find out about the lets project').args, ['the lets project']);
+  assert.deepEqual(one('claude, find out who maintains lodash').args, ['who maintains lodash']);
+  none('find out', 'pseudo');
   assert.deepEqual(one('research: the history of morse code').args, ['the history of morse code']);
   assert.equal(one('investigate the slow query').kind, 'research');
   assert.equal(one('spawn an agent to review the repo').kind, 'agent');
