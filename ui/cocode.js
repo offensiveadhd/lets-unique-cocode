@@ -7,7 +7,10 @@
  * and reads what they send as a message written in code (`cocode.ask`,
  * `cocode.export`). When the engine has a local runner (lets 0.7.0+, consent
  * first), Run executes python and javascript on this machine itself and tells
- * Claude afterwards (`cocode.ran`). Contract: CONTRACT.md. Everything
+ * Claude afterwards (`cocode.ran`). Lines that *reach* outside the sandbox
+ * (`ping(host)`, `claude.browser(url)`, `research(topic)`, `$ cmd`; ui/reach.js)
+ * are marked in the gutter and always run through Claude, who does them for
+ * real (`cocode.run {reach}`). Contract: CONTRACT.md. Everything
  * non-cocode (companion, chat, components, toasts) is the shell's job
  * (/sdk/lets-shell.js); this file only plugs into it.
  *
@@ -23,10 +26,11 @@ import { Lets } from '/sdk/lets-client.js';
 import { createEditor } from './editor.js';
 import { detect, cleanLang, commentMarker, tokenizeAll } from './syntax.js';
 import { predict } from './predict.js';
+import { scanReach, describeReach, explainReach, REACH_MAX } from './reach.js';
 
 // ───────────────────────────── 1. constants & helpers ─────────────────────────────
 
-const VERSION = '0.2.0';
+const VERSION = '0.3.0';
 const CAPS = ['entity', 'chat', 'components', 'clipboard'];
 const CHANGED_MS = 500;
 const LOCAL_MS = 250;
@@ -173,6 +177,8 @@ const stLines = $('st-lines');
 const stRev = $('st-rev');
 const stGhost = $('st-ghost');
 const stBuild = $('st-build');
+const stReach = $('st-reach');
+const stReachWrap = $('st-reach-wrap');
 const srLive = $('sr-live');
 const dToast = $('d-toast');
 
@@ -196,6 +202,9 @@ let runnerSeq = 0;
 let consentBack = null;
 /** @type {Map<number, {kind:string, text:string}>} */
 const annotations = new Map();
+/** The lines that reach outside the sandbox (ui/reach.js), rescanned 500 ms after a change. Run goes through Claude while any exist.
+ * @type {import('./reach.js').Reach[]} */
+let reach = [];
 const stats = { accepted: 0, rejected: 0, acceptedLocal: 0 };
 let seeds = [];
 let emptyDismissed = false;
@@ -234,6 +243,7 @@ function setLang(name, detected) {
   ed.render();
   renderBuild();
   asWritten();
+  rescan();                                                      // what counts as a reach depends on the language (fetch is native in javascript)
 }
 let lastDetect = '';
 function redetect(force) {
@@ -347,7 +357,8 @@ function renderBuild() {
   const asw = build?.source === 'local' ? ' · as written' : '';
   buildPill.dataset.state = st;
   buildPill.textContent = st === 'none' ? '—' : st === 'ready' ? `ready · rev ${build.rev}${asw}` : st === 'stale' ? `stale · rev ${build.rev}${asw}` : st === 'building' ? 'building…' : 'failed';
-  buildPill.title = asw ? 'Your text, run as written on this machine. Claude replaces it when it builds something better.' : '';
+  buildPill.title = (asw ? 'Your text, run as written on this machine. Claude replaces it when it builds something better.' : '')
+    + (reach.length ? `${asw ? '\n' : ''}${plural(reach.length, 'line reaches', 'lines reach')} outside the sandbox, so Run goes through Claude.` : '');
   buildEmpty.hidden = !!build;
   buildMeta.hidden = !build;
   buildCode.hidden = !build || !build.code;
@@ -384,9 +395,10 @@ function runPillOf(r) {
 function runOutput(r) {
   const pre = h('pre', { class: 'lets-pre run-out' });
   if (r.system) pre.append(h('span', { class: 'out-sys', text: r.system }));
+  if (r.reach) pre.append(h('span', { class: 'out-reach', text: r.reach }));
   if (r.stdout) pre.append(h('span', { class: 'out-std', text: r.stdout }));
   if (r.stderr) pre.append(h('span', { class: 'out-err', text: r.stderr }));
-  if (!r.system && !r.stdout && !r.stderr) pre.append(h('span', { class: 'out-sys lets-dim', text: r.status === 'running' ? 'waiting for output…' : r.status === 'lost' ? 'no answer yet' : '(no output)' }));
+  if (!r.system && !r.reach && !r.stdout && !r.stderr) pre.append(h('span', { class: 'out-sys lets-dim', text: r.status === 'running' ? 'waiting for output…' : r.status === 'lost' ? 'no answer yet' : '(no output)' }));
   return pre;
 }
 function runHead(r) {
@@ -396,6 +408,7 @@ function runHead(r) {
     h('span', { class: 'run-id', text: r.id }),
     h('span', { class: 'badge', text: r.lang }),
     r.sandbox ? h('span', { class: 'badge badge-local', text: `local · ${r.sandbox}`, title: `Ran on this machine (${sbx})` }) : null,
+    r.reaches ? h('span', { class: 'badge badge-reach', text: `reach · ${r.reaches}`, title: `${plural(r.reaches, 'line reaches', 'lines reach')} outside the sandbox: Claude does ${r.reaches === 1 ? 'it' : 'them'} for real with his own tools.` }) : null,
     h('span', { class: 'lets-dim', text: `rev ${r.rev}${r.buildRev != null && r.buildRev !== r.rev ? ` · build ${r.buildRev}` : ''}` }),
     h('span', { class: 'pill', 'data-state': state, text }),
     r.ms != null ? h('span', { class: 'lets-dim', text: `${r.ms} ms` }) : null);
@@ -439,13 +452,31 @@ function renderNotes() {
       h('button', { type: 'button', class: 'note-line', onclick: () => ed.scrollToLine(line) }, `line ${line}`),
       h('span', { class: 'badge', text: a.kind }), ' ', h('span', { text: a.text })));
   }
-  ed.setMarkers(new Map([...annotations.entries()].map(([k, v]) => [k, v.kind])));
+  const markers = new Map([...annotations.entries()].map(([k, v]) => [k, v.kind]));
+  for (const r of reach) if (!markers.has(r.line)) markers.set(r.line, 'reach');     // Claude's note on a line wins over the reach diamond
+  ed.setMarkers(markers);
 }
+/** The gutter note of a line: Claude's annotation, else the reach on it (what it reaches and that Claude does it for real). */
+function noteAt(line) {
+  const a = annotations.get(line);
+  if (a) return a;
+  const r = reach.find((x) => x.line === line);
+  return r ? { kind: 'reach', text: explainReach(r) } : null;
+}
+/** Rescan the document for reaches; redraw the gutter and the status line when they changed. */
+function updateReach() {
+  const next = scanReach(ed.text, L.name);
+  const same = next.length === reach.length && next.every((r, i) => r.line === reach[i].line && r.name === reach[i].name);
+  reach = next;
+  if (!same) { renderNotes(); renderBuild(); }
+  updateStatus();
+}
+const rescan = debounce(updateReach, CHANGED_MS);
 
 function findRun(id) { return runs.find((r) => r.id === id) || null; }
 /** A new run entry (status running) for build `b`; `id` defaults to the window's own r_<rev>_<n>. */
 function runEntry(b, id = `r_${ed.rev}_${++runSeq}`) {
-  return { id, rev: ed.rev, buildRev: b ? b.rev : null, lang: b?.lang || L.name, at: Date.now(), status: 'running', stdout: '', stderr: '', system: '', exit: null, ms: null, lost: 0, sandbox: null, killed: null, local: false, refused: false };
+  return { id, rev: ed.rev, buildRev: b ? b.rev : null, lang: b?.lang || L.name, at: Date.now(), status: 'running', stdout: '', stderr: '', system: '', reach: '', reaches: 0, exit: null, ms: null, lost: 0, sandbox: null, killed: null, local: false, refused: false };
 }
 /** Puts a run at the top of the Output pane (at most RUNS_MAX entries; running ones are never dropped). */
 function addRun(r) {
@@ -593,6 +624,7 @@ function renderRunner() {
     }
     lines.push(state === 'ask' ? 'Run asks once before anything runs here.' : 'Run executes these on this machine; anything else goes through Claude.');
   }
+  lines.push('Lines that reach outside the sandbox (ping, claude.browser, research, $ cmd…) always go through Claude, who does them for real.');
   runnerBadge.title = lines.join('\n');
 }
 
@@ -798,6 +830,7 @@ function onChange({ delta, source }) {
   if (by === 'human') localGhost();
   redetect(false);
   asWritten();
+  rescan();
   renderSeeds();
   renderBuild();
   updateStatus();
@@ -832,19 +865,25 @@ function doRun() {
   emitChanged.flush();
   asWritten.cancel();
   makeLocalBuild();
+  rescan.cancel();
+  updateReach();
   const b = build;
+  // a line that reaches outside the sandbox (ping, claude.browser, research, $ cmd…) cannot run here: Claude does it for real
+  if (reach.length) { runViaClaude(null, b, reach); return; }
   // a ready build in a language this machine runs (stale or not: it is fast); a build still streaming goes to Claude
   const lang = b && b.status === 'ready' && b.code.trim() ? runnableLang(b.lang) : '';
   if (!lang) { runViaClaude(); return; }
   if (!runner.allowed) { openConsent(); return; }
   runLocal(b, lang);
 }
-/** Today's path: cocode.run to Claude with the latest build; Claude streams cocode.output into the entry. `r` reuses an entry the runner handed over. */
-function runViaClaude(r = null, b = build) {
-  if (!r) { r = runEntry(b); addRun(r); }
+/** Today's path: cocode.run to Claude with the latest build; Claude streams cocode.output into the entry. `r` reuses an entry the runner handed over.
+ * `rc` are the lines that reach outside the sandbox (§10): the entry says so, and the event carries them so Claude does each one for real. */
+function runViaClaude(r = null, b = build, rc = []) {
+  if (!r) { r = runEntry(b); if (rc.length) { r.reaches = rc.length; r.system += `${plural(rc.length, 'line reaches', 'lines reach')} outside the sandbox: Claude does ${rc.length === 1 ? 'it' : 'them'} for real.\n`; } addRun(r); }
   armLost(r);
   const payload = { run: r.id, rev: ed.rev, text: ed.text.slice(0, TEXT_MAX), lang: L.name };
   if (b) payload.build = { rev: b.rev, lang: b.lang, code: b.code, status: b.status, source: b.source };
+  if (rc.length) payload.reach = rc.slice(0, REACH_MAX).map(({ line, kind, name, args, raw }) => ({ line, kind, name, args, raw }));
   lets.emitNow('cocode.run', payload);
   recordRecent();
   awayToast('Doto is away. The run starts with your next message in Claude Code.');
@@ -981,7 +1020,7 @@ const COMMANDS = {
       created = true;
     }
     if (r.status === 'lost') r.status = 'running';
-    const stream = ['stdout', 'stderr', 'system'].includes(d.stream) ? d.stream : 'stdout';
+    const stream = ['stdout', 'stderr', 'system', 'reach'].includes(d.stream) ? d.stream : 'stdout';
     const text = typeof d.text === 'string' ? d.text : '';
     if (text) { r[stream] = (r[stream] + text).slice(-OUT_MAX); armLost(r); }
     if (d.done) {
@@ -1105,7 +1144,7 @@ function entityContext() {
   return {
     lang: L.name, rev: ed.rev, line: c.line, col: c.col, lineText: ed.lineText(c.line).slice(0, 200), selection: ed.getSelection(),
     hasGhost: !!g, ghostSource: g ? g.source : null, build: build ? { rev: build.rev, status: buildState(), lang: build.lang, source: build.source } : null,
-    lastRun: last ? { id: last.id, exit: last.exit, status: last.status } : null, lines: ed.lines,
+    lastRun: last ? { id: last.id, exit: last.exit, status: last.status } : null, lines: ed.lines, reach: reach.length,
   };
 }
 const ran = new Map();
@@ -1136,6 +1175,8 @@ function updateStatus() {
   const st = buildState();
   stBuild.textContent = st === 'none' ? '—' : st === 'building' ? 'building' : st === 'failed' ? 'failed' : `${st} rev ${build.rev}${build.source === 'local' ? ' (as written)' : ''}`;
   stBuild.dataset.state = st;
+  stReachWrap.hidden = reach.length === 0;
+  stReach.textContent = String(reach.length);
   if (prefs.tabFocus) stGhost.parentElement.dataset.tabfocus = '1'; else delete stGhost.parentElement.dataset.tabfocus;
 }
 
@@ -1149,7 +1190,7 @@ function showStatus(s) {
 // note popover (annotations)
 let noteTimer = 0;
 function showNote(line) {
-  const a = annotations.get(line);
+  const a = noteAt(line);
   if (!a) return;
   clearTimeout(noteTimer);
   notePop.textContent = '';
@@ -1162,8 +1203,8 @@ function showNote(line) {
   notePop.style.left = `${$('gutter').offsetWidth + 12}px`;
 }
 function hideNote() { notePop.hidden = true; }
-$('gutter').addEventListener('click', (e) => { const g = e.target.closest('.gn'); if (!g) return; const line = Number(g.dataset.line); if (annotations.has(line)) { if (notePop.hidden) showNote(line); else hideNote(); } ed.setCursor({ line, col: 0 }); ed.focus(); });
-$('gutter').addEventListener('mouseover', (e) => { const g = e.target.closest('.gn'); if (g && annotations.has(Number(g.dataset.line))) showNote(Number(g.dataset.line)); });
+$('gutter').addEventListener('click', (e) => { const g = e.target.closest('.gn'); if (!g) return; const line = Number(g.dataset.line); if (noteAt(line)) { if (notePop.hidden) showNote(line); else hideNote(); } ed.setCursor({ line, col: 0 }); ed.focus(); });
+$('gutter').addEventListener('mouseover', (e) => { const g = e.target.closest('.gn'); if (g && noteAt(Number(g.dataset.line))) showNote(Number(g.dataset.line)); });
 $('gutter').addEventListener('mouseleave', () => { noteTimer = setTimeout(hideNote, 900); });
 notePop.addEventListener('mouseenter', () => clearTimeout(noteTimer));
 notePop.addEventListener('mouseleave', () => { noteTimer = setTimeout(hideNote, 400); });

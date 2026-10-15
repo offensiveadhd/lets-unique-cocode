@@ -23,6 +23,7 @@ Manual: clone this repo into `~/.lets/uniques/cocode`, or set `LETS_UNIQUES_DIRS
 | **Ghost** | Claude reads each settled change and offers the next lines as dim, italic text at the caret. `Tab` accepts all of it, `Ctrl+→` one word, `Alt+]` / `Alt+[` cycle the alternatives, `Esc` dismisses. Typing the ghost's first letters shrinks it instead of killing it. When Claude is away, a small local predictor offers weaker ghosts (closers, `else:`, `step 3` after `step 2`), marked *local* in the status line. |
 | **Build pane** | While you type, Claude prepares the real program (Python, JavaScript, …) for the current revision. The pane shows the code, its language, the revision and a status. It reads *stale · rev N* when you typed on. A target select (`auto`, `python`, `javascript`, …) and **Prepare** ask for a build now. |
 | **Output pane** | **Run** (`Ctrl+Enter`) executes the build at once: on your machine when the engine can (a badge in the header says so: `local: python · javascript`), otherwise through Claude. Output streams in, newest run first, with an exit pill (ok, failed, timeout, output cap) and the time it took. A run with no output for 60 s says *no answer yet*. Claude's notes on your lines list here too. |
+| **Reach** | A line that asks for what no sandbox can do (`ping('google.com')`, `claude.browser('https://…')`, `research('…')`, `search('…')`, `agent('…')`, `$ ls`, or the real `requests` / `subprocess` calls) gets a cyan diamond in the gutter, and **Run** goes through Claude, who does it for real with his own tools (the real ping, the browser pane, a web search, a research agent, the shell) and streams what happened. Never a function that prints what a ping *would* say. |
 | **Ask** | `Ctrl+K` opens a one-line question about the current line or selection. Or write a line that starts with `??` and press `Enter`: the line stays in your code, and Claude answers in chat and annotates the lines it cites. |
 | **Send to Claude** | Hands the code over as a message. Pick what you mean (*you decide*, *a question*, *explain this*, *do this*, *fix this*, *review this*, *just a note*) or leave it on auto. The window closes and Claude answers in Claude Code. Say *continue* to bring it back with your code, build, runs and notes. |
 | **Answer in code** | Next to it (`Ctrl+Shift+O`, also in Doto's menu): the same handoff, but Claude's whole answer comes back written as code in the chip's language, nothing else. Without a window: `/lets cocode output [lang] <question>`. |
@@ -35,6 +36,24 @@ With lets 0.7.0, Run does not wait for Claude when the program is Python, JavaSc
 
 What is sandboxed: each run gets a fresh temporary folder under `~/.lets/run/jobs` (deleted afterwards), a scrubbed environment, 30 s and 1 MB of output. Python runs under an audit hook that blocks files outside that folder, sockets and subprocesses. JavaScript and TypeScript run under Node's permission model, which blocks files outside that folder and child processes. What is not: it runs as you and is not a VM, CPU and memory are not capped, and **Node does not block the network**. When you type Python or JavaScript yourself, the window runs your text *as written*; Claude only sends a build when it improves on it (sample data, a fix). Claude's own runs are not affected: they still go through Claude Code's permission prompt. Switch it off with `"runner": {"enabled": false}` in `~/.lets/config.json`.
 
+## Reach: what leaves the sandbox
+
+A sandbox can print and compute. It cannot ping a host, open your browser, search the web, start a research agent or run a shell command, and before 0.3.0 a line like `ping('google.com')` quietly became a `ping` function that printed what a ping would have said. Now such a line is a **reach**, and Claude does it for real.
+
+Write it any way you like, in any language:
+
+```
+ping('google.com')                  # a bare verb: ping, dns, fetch, curl, browser, search, research, agent, hermes, shell, say, ask
+claude.browser('https://example.com')   # the claude namespace: any verb, claude.whatever(...) included
+research the history of morse code  # pseudo-code, no parentheses: ping, browse, research, curl, whois, hermes
+$ dir                                # a shell line
+r = requests.get(url)                # the real library the sandbox would block (python: requests, socket, subprocess, os.system, webbrowser…)
+```
+
+The window marks each reach with a small cyan diamond in the gutter (hover it: *`ping google.com` — reaches the network. Claude does it for real when you Run.*), the status line counts them, and **Run** skips the local runner whatever the language: the run entry gets a `reach · N` badge, Claude performs each reach in the program's order with the matching tool (the real `ping`, the app's browser pane with the tab left open for you, a web search, a sub-agent, the local Hermes agent, Bash, the chat), names each one in cyan as he goes (`→ ping google.com`), and streams the real output. The pure parts of the program still run in the sandbox. A reach that would change the world (send, post, delete, pay) waits for your yes in chat; probing someone else's security is refused. Claude Code's own permission prompts stand for every tool he calls.
+
+Not a reach: a comment, a `??` line, a function you defined yourself (`def ping(host):` makes `ping(…)` yours), a method of the same name (`re.exec`, `list.search`), and what the language's sandbox does itself (`fetch` in JavaScript runs locally, since Node's permission model allows the network). The scanner is a heuristic: a reach it misses in Python ends with `RuntimeError: blocked by the lets sandbox`, and Claude reads that as a reach and performs the program for real.
+
 A few rules of the road:
 
 - A ghost is an offer. It is not in your document until you accept it, and `Ctrl+Z` takes an accepted one back.
@@ -45,13 +64,13 @@ A few rules of the road:
 
 ## How Claude drives it
 
-Events (up): `cocode.changed`, `cocode.ghost.accept|reject|request`, `cocode.build.request`, `cocode.run` (Claude runs it), `cocode.ran` (the window ran it on your machine), `cocode.ask`, `cocode.export`, `cocode.snapshot`.
+Events (up): `cocode.changed`, `cocode.ghost.accept|reject|request`, `cocode.build.request`, `cocode.run` (Claude runs it; with `reach`, he performs each reach for real), `cocode.ran` (the window ran it on your machine), `cocode.ask`, `cocode.export`, `cocode.snapshot`.
 Commands (down): `cocode.suggest`, `cocode.seed`, `cocode.build`, `cocode.output`, `cocode.insert`, `cocode.replace`, `cocode.set`, `cocode.lang`, `cocode.annotate`, `cocode.highlight`, `cocode.focus`, `cocode.load`, `cocode.snapshot`.
 
 The manifest's `session` block (`export: cocode.export`, `snapshot: cocode.snapshot`, `restore: cocode.load`) lets the engine save a handoff and resume it.
 
-- [GUIDE.md](GUIDE.md) is what Claude reads when it opens cocode: the predict loop, build ahead, how to run a program and stream its output, how to read a handoff, the etiquette.
-- [CONTRACT.md](CONTRACT.md) is the behaviour spec: the model, every event and command with its data, the flows, the page and the local predictor.
+- [GUIDE.md](GUIDE.md) is what Claude reads when it opens cocode: the predict loop, build ahead, how to run a program and stream its output, what to do for each kind of reach, how to read a handoff, the etiquette.
+- [CONTRACT.md](CONTRACT.md) is the behaviour spec: the model, every event and command with its data, the flows, the page, the local predictor, the local runner and reach (§10).
 - `schemas/` holds JSON Schemas for the main messages: `changed`, `run`, `ran`, `ask`, `export`, `suggest`, `build`, `output` and `load`.
 
 ## Layout
@@ -63,8 +82,10 @@ CONTRACT.md    behaviour spec
 icon.svg
 schemas/       changed, run, ran, ask, export, suggest, build, output, load; unique.schema.json (vendored)
 ui/            index.html, cocode.js (the window), editor.js (textarea, highlight layer, ghost, undo),
-               syntax.js (tokenizer, language detection), predict.js (local predictor), style.css
+               syntax.js (tokenizer, language detection), predict.js (local predictor),
+               reach.js (the lines that reach outside the sandbox), style.css
 scripts/       validate.mjs: manifest + schema check (zero dependencies)
+test/          reach.test.mjs: node --test (zero dependencies)
 ```
 
 The UI imports the engine's SDK at runtime (`/sdk/lets-client.js`, `/sdk/lets-shell.js`). It has no build step and no dependencies, and it never runs your code in the page: the engine's local runner does (after your OK), or Claude does, and the output streams back.

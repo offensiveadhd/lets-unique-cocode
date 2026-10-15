@@ -1,9 +1,9 @@
 {
   "lip": 1,
   "name": "cocode",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "title": "Cocode — talk in code",
-  "description": "An editor for any language, even one that doesn't exist. Claude predicts your next lines as a ghost you accept with Tab, prepares the real program in the background, and reads what you send as a question, a task or a note. With your OK, Run executes Python and JavaScript on this machine in milliseconds.",
+  "description": "An editor for any language, even one that doesn't exist. Claude predicts your next lines as a ghost you accept with Tab, prepares the real program in the background, and reads what you send as a question, a task or a note. With your OK, Run executes Python and JavaScript on this machine in milliseconds; a line that reaches outside (ping, claude.browser, research, $ cmd) Claude does for real.",
   "entry": "ui/index.html",
   "guide": "GUIDE.md",
   "icon": "icon.svg",
@@ -35,7 +35,7 @@
       "summary": "The human asked for the real program in a target language (Build pane select or Prepare): {rev, text, lang, target: auto|<lang>}"
     },
     "cocode.run": {
-      "summary": "Run pressed and the window could not run it itself (no local runner, a language it cannot run here, or Not now): {run, rev, text, lang, build?}. Run it and stream cocode.output.",
+      "summary": "Run pressed, not run here: {run, rev, text, lang, build?, reach?}. reach = lines that leave the sandbox (ping, claude.browser, research, $ cmd): do each for real, in order; stream cocode.output.",
       "schema": "schemas/run.json"
     },
     "cocode.ran": {
@@ -67,7 +67,7 @@
       "schema": "schemas/build.json"
     },
     "cocode.output": {
-      "summary": "Run output: {run, stream: stdout|stderr|system, text, seq?, done?, exit?, ms?}; done:true with exit closes the run",
+      "summary": "Run output: {run, stream: stdout|stderr|system|reach, text, seq?, done?, exit?, ms?}; reach names a reach as you perform it (\"→ ping google.com\"); done:true with exit closes the run",
       "schema": "schemas/output.json"
     },
     "cocode.insert": {
