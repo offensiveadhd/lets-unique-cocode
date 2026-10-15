@@ -110,7 +110,7 @@ const NATURAL = [
   [nat(`(?:open|launch|start)\\s+(?:the\\s+|a\\s+|claude'?s\\s+)?browser\\b${SEP}(.*)`), 'browser', 'browser'],
   [nat(`screenshot\\s+(?:of\\s+)?(\\S.*)`), 'browser', 'screenshot'],
   [nat(`(?:search\\s+(?:the\\s+)?(?:web|internet|online|google)(?:\\s+for)?|google|web\\s*search)${SEP}(\\S.*)`), 'search', 'search'],
-  [nat(`(?:research|investigate|find\\s+out\\s+(?:about|who|what|why|how|where|when|which)|deep[\\s-]?dive(?:\\s+(?:into|on))?)${SEP}(\\S.*)`), 'research', 'research'],
+  [nat(`(?:research|investigate|find\\s+out\\s+(?:about\\s+)?(?=(?:who|what|why|how|where|when|which|whether|if|the|an?)\\b)|deep[\\s-]?dive(?:\\s+(?:into|on))?)${SEP}(\\S.*)`), 'research', 'research'],   // the question word stays in the topic: "who maintains lodash"
   [nat(`(?:delegate|spawn\\s+(?:an?\\s+)?(?:sub)?agent(?:\\s+to)?|(?:ask|have|use)\\s+(?:an?\\s+)?(?:sub)?agent(?:\\s+to)?|(?:sub)?agent)${SEP}(\\S.*)`), 'agent', 'agent'],
   [nat(`(?:(?:ask|use|tell)\\s+)?(hermes|glm|kimi)(?:\\s+to)?${SEP}(\\S.*)`), 'hermes', null],
   [nat(`(?:run|execute|exec)\\s+(?:the\\s+)?(?:command|cmd|shell)${SEP}(\\S.*)`), 'shell', 'shell'],
