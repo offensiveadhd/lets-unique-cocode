@@ -104,6 +104,8 @@ html, body { margin: 0; height: 100%; overflow: hidden; background: var(--lets-b
 .gn[data-kind="ok"] .gmark { background: var(--lets-ok); box-shadow: 0 0 8px var(--lets-ok); }
 .gn[data-kind="warn"] .gmark { background: var(--lets-warn); box-shadow: 0 0 8px var(--lets-warn); }
 .gn[data-kind="error"] .gmark { background: var(--lets-err); box-shadow: 0 0 8px var(--lets-err); }
+/* a reach: the line asks for the network, the browser, an agent, the shell… a small cyan diamond */
+.gn[data-kind="reach"] .gmark { border-radius: 1px; background: var(--c-teal); box-shadow: 0 0 8px var(--c-teal); transform: translateY(-50%) rotate(45deg) scale(.9); }
 
 .surface { position: relative; flex: 1; min-width: max-content; min-height: 100%; }
 .layer, .code {
@@ -180,6 +182,7 @@ html, body { margin: 0; height: 100%; overflow: hidden; background: var(--lets-b
 #st-build[data-state="failed"] { color: var(--lets-err); }
 #st-build[data-state="building"] { color: var(--lets-accent-3); }
 .statusline [data-tabfocus]::after { content: " · Tab moves focus"; color: var(--lets-warn); }
+.st-reach b { color: var(--c-teal); }
 
 /* note popover */
 .note-pop { position: absolute; z-index: 6; max-width: min(420px, calc(100% - 40px)); padding: 8px 12px 9px; font-size: 12.5px; animation: ghost-in .18s ease-out; }
@@ -187,6 +190,7 @@ html, body { margin: 0; height: 100%; overflow: hidden; background: var(--lets-b
 .note-pop[data-kind="warn"] .badge { color: var(--lets-warn); border-color: var(--lets-warn); }
 .note-pop[data-kind="error"] .badge { color: var(--lets-err); border-color: var(--lets-err); }
 .note-pop[data-kind="ok"] .badge { color: var(--lets-ok); border-color: var(--lets-ok); }
+.note-pop[data-kind="reach"] .badge { color: var(--c-teal); border-color: rgba(62, 230, 193, .45); }
 
 /* ---- rail: Build + Output ------------------------------------------------------ */
 
@@ -224,6 +228,7 @@ html, body { margin: 0; height: 100%; overflow: hidden; background: var(--lets-b
 .run-id { font: 600 12px var(--lets-mono); }
 .run-out { margin: 6px 0 0; max-height: 260px; white-space: pre-wrap; word-break: break-word; }
 .badge-local { color: var(--c-teal); border-color: rgba(62, 230, 193, .45); }
+.badge-reach { color: var(--c-ghost); border-color: rgba(107, 240, 255, .45); }
 
 /* the local runner badge (Output pane header): on · needs your OK · off */
 .runner { display: inline-flex; align-items: center; gap: 5px; padding: 1px 8px; border: 1px dashed var(--lets-line); border-radius: 999px; font: 600 10.5px/1.6 var(--lets-mono); color: var(--lets-fg-dim); white-space: nowrap; cursor: help; }
@@ -232,6 +237,7 @@ html, body { margin: 0; height: 100%; overflow: hidden; background: var(--lets-b
 .runner[data-state="on"]::before { opacity: 1; box-shadow: 0 0 6px currentColor; }
 .runner[data-state="ask"] { color: var(--lets-warn); border-color: rgba(255, 209, 102, .5); }
 .out-sys { color: var(--lets-fg-dim); }
+.out-reach { color: var(--c-teal); }
 .out-err { color: #ff9fb3; }
 .notes { margin-top: 12px; }
 .notes h3 { font-size: 12px; letter-spacing: .04em; text-transform: uppercase; color: var(--lets-fg-dim); }

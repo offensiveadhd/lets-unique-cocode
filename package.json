@@ -1,10 +1,16 @@
 {
   "name": "lets-unique-cocode",
-  "version": "0.2.0",
-  "description": "cocode — talk in code: an editor for any language where Claude predicts the next lines, builds the real program ahead and runs it.",
+  "version": "0.3.0",
+  "description": "cocode — talk in code: an editor for any language where Claude predicts the next lines, builds the real program ahead, runs it, and does for real what reaches outside the sandbox (ping, the browser, a research agent, the shell).",
   "type": "module",
   "private": true,
   "license": "MIT",
-  "scripts": { "validate": "node scripts/validate.mjs" },
-  "repository": { "type": "git", "url": "https://github.com/TikoTikTok/lets-unique-cocode.git" }
+  "scripts": {
+    "validate": "node scripts/validate.mjs",
+    "test": "node --test test/reach.test.mjs"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/TikoTikTok/lets-unique-cocode.git"
+  }
 }
