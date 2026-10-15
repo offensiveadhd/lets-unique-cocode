@@ -30,7 +30,7 @@ import { scanReach, describeReach, explainReach, REACH_MAX } from './reach.js';
 
 // ───────────────────────────── 1. constants & helpers ─────────────────────────────
 
-const VERSION = '0.3.0';
+const VERSION = '0.3.1';
 const CAPS = ['entity', 'chat', 'components', 'clipboard'];
 const CHANGED_MS = 500;
 const LOCAL_MS = 250;
