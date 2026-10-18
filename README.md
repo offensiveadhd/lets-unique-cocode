@@ -1,6 +1,6 @@
 <p align="center"><img src="icon.svg" width="72" alt=""></p>
 <h1 align="center">cocode</h1>
-<p align="center"><b>Talk in code.</b><br>A <a href="https://github.com/TikoTikTok/lets">lets</a> unique: an editor for any language, even one that doesn't exist. Claude predicts your next lines as a ghost you accept with Tab, prepares the real program in the background so Run is instant, and reads what you send as a question, a task or a note. With your OK, Run executes Python and JavaScript on your machine in milliseconds.</p>
+<p align="center"><b>Talk in code.</b><br>A <a href="https://github.com/offensiveadhd/lets">lets</a> unique: an editor for any language, even one that doesn't exist. Claude predicts your next lines as a ghost you accept with Tab, prepares the real program in the background so Run is instant, and reads what you send as a question, a task or a note. With your OK, Run executes Python and JavaScript on your machine in milliseconds.</p>
 
 ---
 
@@ -111,4 +111,4 @@ Validate with `node scripts/validate.mjs` here, or `node engine/bin/lets.mjs val
 
 ## License
 
-MIT © TikoTikTok
+MIT © offensiveadhd

@@ -1,6 +1,6 @@
 # cocode — build contract
 
-The behaviour spec of **cocode**, the code window you talk through. The shell (companion, chat, components, toasts) and the theme are the engine's: see [docs/UI-CONTRACT.md](https://github.com/TikoTikTok/lets/blob/main/docs/UI-CONTRACT.md) in the lets repo. Engine requirement: lets **0.4.0** or later (handoff sessions). The local runner (§9) is feature-detected and needs lets **0.7.0** ([docs/RUNNER.md](https://github.com/TikoTikTok/lets/blob/main/docs/RUNNER.md)); without it everything goes through Claude as before. Note: the manifest declares `permissions.exec`, a key engines before 0.7.0 do not know, and their manifest check (`permissions` allows no other keys) refuses the unique.
+The behaviour spec of **cocode**, the code window you talk through. The shell (companion, chat, components, toasts) and the theme are the engine's: see [docs/UI-CONTRACT.md](https://github.com/offensiveadhd/lets/blob/main/docs/UI-CONTRACT.md) in the lets repo. Engine requirement: lets **0.4.0** or later (handoff sessions). The local runner (§9) is feature-detected and needs lets **0.7.0** ([docs/RUNNER.md](https://github.com/offensiveadhd/lets/blob/main/docs/RUNNER.md)); without it everything goes through Claude as before. Note: the manifest declares `permissions.exec`, a key engines before 0.7.0 do not know, and their manifest check (`permissions` allows no other keys) refuses the unique.
 
 ## 0 The idea
 
@@ -166,7 +166,7 @@ Local ghosts never exceed 2 lines and carry `source:"local"`.
 
 ## 9 Local runner
 
-lets 0.7.0 can run a program on the human's machine itself, sandboxed and with their consent ([docs/RUNNER.md](https://github.com/TikoTikTok/lets/blob/main/docs/RUNNER.md)). cocode uses it so that **Run** takes milliseconds instead of a round trip through Claude. The manifest declares `permissions.exec: ["python", "javascript", "typescript"]`; the engine refuses `/lip/run` for anything else.
+lets 0.7.0 can run a program on the human's machine itself, sandboxed and with their consent ([docs/RUNNER.md](https://github.com/offensiveadhd/lets/blob/main/docs/RUNNER.md)). cocode uses it so that **Run** takes milliseconds instead of a round trip through Claude. The manifest declares `permissions.exec: ["python", "javascript", "typescript"]`; the engine refuses `/lip/run` for anything else.
 
 **Discovery.** On every `lip.hello` (boot and each reconnect), after consent and after a refusal, the window reads `GET /lip/run/info?w=<windowId>` (token header) and keeps `runner = {enabled, allowed, exec, languages, limits}`. A 404 (an engine without the runner), a 403, a network error or a `hostVersion` before 0.7.0 in `lip.hello` (the window then does not ask) means `runner = null`: no local runner. A language runs here when `languages[lang].ok` is true and `exec` lists it; the chip and build names `py`, `python3`, `js`, `node`, `mjs` and `ts` map to `python`, `javascript` and `typescript`. The Output pane's badge shows the result (§5).
 
