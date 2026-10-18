@@ -1,7 +1,7 @@
 {
   "lip": 1,
   "name": "cocode",
-  "version": "0.3.1",
+  "version": "0.4.0",
   "title": "Cocode — talk in code",
   "description": "An editor for any language, even one that doesn't exist. Claude predicts your next lines as a ghost you accept with Tab, prepares the real program in the background, and reads what you send as a question, a task or a note. With your OK, Run executes Python and JavaScript on this machine in milliseconds; a line that reaches outside (ping, claude.browser, research, $ cmd) Claude does for real.",
   "entry": "ui/index.html",
@@ -35,7 +35,7 @@
       "summary": "The human asked for the real program in a target language (Build pane select or Prepare): {rev, text, lang, target: auto|<lang>}"
     },
     "cocode.run": {
-      "summary": "Run pressed, not run here: {run, rev, text, lang, build?, reach?}. reach = lines that leave the sandbox (ping, claude.browser, research, $ cmd): do each for real, in order; stream cocode.output.",
+      "summary": "Build & run, not run here: {run, rev, text, lang, build?, reach?, rebuild?}. Build first unless fresh (rebuild: always); reach lines leave the sandbox, do each for real; stream cocode.output.",
       "schema": "schemas/run.json"
     },
     "cocode.ran": {

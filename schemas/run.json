@@ -11,6 +11,7 @@
     "text": { "$ref": "#/$defs/text" },
     "truncated": { "type": "boolean", "description": "true when text was longer than 64 000 characters; the tail is kept." },
     "lang": { "$ref": "#/$defs/lang" },
+    "rebuild": { "type": "boolean", "description": "true (Shift+F5): build anew for this rev before running, even when build.rev equals rev. Send cocode.build {status:\"building\"} first so the window's wheel shows it." },
     "reach": {
       "type": "array",
       "maxItems": 50,

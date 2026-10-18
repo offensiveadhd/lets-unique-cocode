@@ -30,10 +30,10 @@ With the local runner (and the human's OK) the window runs the build itself and 
 
 **`cocode.ran {run, rev, buildRev, lang, sandbox, exit, ms, timedOut, killed, stdout, stderr}`**: already ran, output shown. One Doto line: "Ran it. Exit 0, 3 lines." On a failure say why in one line, offer the fix as a ghost or an annotation, send a corrected `cocode.build`, and never run it again, with one exception: `stderr` saying `blocked by the lets sandbox`, or a `NameError`/`ReferenceError` on a name that means a reach (`pingHost`, `openBrowser`), means the program reached outside and the window missed it. Treat it as a reach run (below) under a run id of your own (`r_<rev>_claude`).
 
-**`cocode.run {run, rev, text, lang, build?, reach?}`**: the window could not run it (reaches, no runner, another language, *Not now*, busy). Now:
+**`cocode.run {run, rev, text, lang, build?, reach?, rebuild?}`**: the window could not run it (reaches, no runner, another language, *Not now*, busy). Now:
 
 1. With `reach`: the next section.
-2. Run `build` if `build.rev === rev`; otherwise build for this `rev` (send the `cocode.build` too), then run.
+2. Run `build` if `build.rev === rev` and not `rebuild`; otherwise send `cocode.build {status:"building"}` at once (the window's wheel shows it), build for this `rev`, then run.
 3. One call to the engine's `run` tool: `run {lang, code, to:"<windowId>", run:"<id>", emit:"cocode.output"}`: sandboxed, streams `cocode.output` into the window and closes the run. `windowId`: your `open` result, or the event's `from` after `#`.
 4. A language the tool lacks (bash, go, …): the file in your scratch folder, your own tools (30 s, no sudo, no deletes), `cocode.output` streamed yourself and closed with `{done:true, exit, ms}`. Ask first if it would touch other files or needs secrets.
 5. One Doto line.

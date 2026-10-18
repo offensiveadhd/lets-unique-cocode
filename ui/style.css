@@ -72,6 +72,26 @@ html, body { margin: 0; height: 100%; overflow: hidden; background: var(--lets-b
 .tb-btn:disabled { opacity: .4; cursor: default; }
 .tb-btn:disabled:hover { background: transparent; color: var(--lets-fg-dim); }
 .tb-text { padding: 0 9px 0 7px; }
+
+/* Build & run: the wheel. idle = the play icon; building/running = a spinning ring; done ✓; failed ✗; lost ?; waiting = Claude is away */
+.run-ind { position: relative; display: inline-flex; align-items: center; justify-content: center; width: 18px; height: 18px; flex: none; }
+.run-ind svg { width: 17px; height: 17px; }
+.run-ind:not([data-state="idle"]) svg { display: none; }
+.run-ind[data-state="building"]::before, .run-ind[data-state="running"]::before, .run-ind[data-state="waiting"]::before {
+  content: ""; width: 12px; height: 12px; box-sizing: border-box; border-radius: 50%;
+  border: 2px solid rgba(107, 240, 255, .25); border-top-color: var(--lets-accent-3); animation: spin .9s linear infinite;
+}
+.run-ind[data-state="building"]::before { border-color: rgba(62, 230, 193, .25); border-top-color: var(--c-teal); }
+.run-ind[data-state="waiting"]::before { border-color: rgba(255, 209, 102, .25); border-top-color: var(--lets-warn); animation-duration: 2.4s; }
+.run-ind[data-state="done"]::before, .run-ind[data-state="failed"]::before, .run-ind[data-state="lost"]::before { font: 700 14px/1 var(--lets-mono); animation: glow-in .25s ease-out; }
+.run-ind[data-state="done"]::before { content: "✓"; color: var(--lets-ok); }
+.run-ind[data-state="failed"]::before { content: "✗"; color: var(--lets-err); }
+.run-ind[data-state="lost"]::before { content: "?"; color: var(--lets-warn); }
+.tb-run[data-state="running"], .tb-run[data-state="building"] { color: var(--lets-fg); border-color: rgba(107, 240, 255, .35); }
+.tb-run[data-state="waiting"] { color: var(--lets-fg); border-color: rgba(255, 209, 102, .4); }
+.tb-run[data-state="done"] { border-color: rgba(94, 242, 166, .4); }
+.tb-run[data-state="failed"] { color: var(--lets-fg); border-color: rgba(255, 107, 139, .45); }
+@keyframes spin { to { transform: rotate(360deg); } }
 .tb-primary { background: linear-gradient(135deg, var(--lets-accent), #7c4dff); color: #fff; padding: 0 11px 0 9px; }
 .tb-primary:hover { color: #fff; background: linear-gradient(135deg, #b685ff, #8a5fff); box-shadow: var(--lets-glow); }
 .tb-chip { gap: 6px; padding: 0 9px; font-family: var(--lets-mono); font-weight: 600; color: var(--lets-fg); border-color: var(--lets-line); background: rgba(8, 4, 20, .35); }
@@ -305,6 +325,7 @@ html, body { margin: 0; height: 100%; overflow: hidden; background: var(--lets-b
 @media (prefers-reduced-motion: reduce) {
   .ghost-block, .empty, .note-pop, #app.swap .layer, .glow-ins, .consent-wrap, .consent { animation: none; }
   .pill::before { animation: none; opacity: 1; }
+  .run-ind::before { animation: none !important; border-style: dashed; }
   .seed, .gmark, .pane-toggle svg, .glow { transition: none; }
 }
 
