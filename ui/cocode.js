@@ -30,7 +30,7 @@ import { scanReach, describeReach, explainReach, REACH_MAX } from './reach.js';
 
 // ───────────────────────────── 1. constants & helpers ─────────────────────────────
 
-const VERSION = '0.3.1';
+const VERSION = '0.4.0';
 const CAPS = ['entity', 'chat', 'components', 'clipboard'];
 const CHANGED_MS = 500;
 const LOCAL_MS = 250;
@@ -132,6 +132,7 @@ const langForm = $('lang-form');
 const langInput = $('lang-input');
 const btnSuggest = $('btn-suggest');
 const btnRun = $('btn-run');
+const runInd = $('run-ind');
 const btnAsk = $('btn-ask');
 const btnSend = $('btn-send');
 const intentSel = $('intent');
@@ -198,6 +199,10 @@ const runs = [];
  * @type {null|{enabled:boolean, allowed:boolean, exec:string[]|null, languages:Object<string, {ok:boolean, version:string|null, sandbox:string|null}>, limits:{timeoutMs:number, outputBytes:number, concurrent:number}}} */
 let runner = null;
 let runnerSeq = 0;
+/** Build & run pressed while Claude's build was still streaming: run it the moment it lands (§4). {rev, at} or null. */
+let runWhenBuilt = null;
+const QUEUE_MS = 60000;
+const TITLE = document.title;
 /** Where focus goes back to when the consent card closes. */
 let consentBack = null;
 /** @type {Map<number, {kind:string, text:string}>} */
@@ -371,6 +376,7 @@ function renderBuild() {
   buildCode.classList.toggle('stale', st === 'stale');
   if (build.notes) buildNotes.textContent = build.notes;
   updateStatus();
+  renderJob();
 }
 
 function renderRuns() {
@@ -382,6 +388,33 @@ function renderRuns() {
   runPill.textContent = open ? `running · ${open}` : last ? (last.status === 'done' ? `ok · exit 0` : last.status === 'lost' ? 'no answer yet' : last.status === 'failed' ? `failed · ${runPillOf(last)[1]}` : last.status) : '—';
   for (const r of [...runs].reverse()) runsEl.append(runArticle(r));
   updateStatus();
+  renderJob();
+}
+
+/**
+ * The job wheel in the Build & run button (and the tab title): one state for build + run together.
+ * running > waiting (a run through Claude while Doto is away) > building (Claude's build in flight, or a run queued on it)
+ * > failed / lost / done for the last run of the current text > idle. An edit (new rev) puts it back to idle.
+ */
+function jobState() {
+  const open = runs.filter((r) => r.status === 'running');
+  if (open.length) return open.some((r) => !r.local) && hasShell && shell.listening === false ? 'waiting' : 'running';
+  if (runWhenBuilt || build?.status === 'building') return 'building';
+  const last = runs[runs.length - 1];
+  if (last && last.rev === ed.rev) return last.status === 'done' ? 'done' : last.status === 'lost' ? 'lost' : 'failed';
+  if (build?.status === 'failed' && build.rev === ed.rev) return 'failed';
+  return 'idle';
+}
+const JOB_WORDS = { idle: 'Build & run', running: 'running…', waiting: 'waiting for Claude (Doto is away)', building: 'building…', done: 'done · exit 0', failed: 'failed', lost: 'no answer yet' };
+const JOB_MARK = { running: '⟳ ', waiting: '⟳ ', building: '⟳ ', done: '✓ ', failed: '✗ ', lost: '? ' };
+function renderJob() {
+  const s = jobState();
+  if (btnRun.dataset.state === s) return;
+  btnRun.dataset.state = s;
+  runInd.dataset.state = s;
+  btnRun.setAttribute('aria-label', s === 'idle' ? 'Build and run' : `Build and run: ${JOB_WORDS[s]}`);
+  btnRun.title = `Build & run (F5 · Ctrl+Enter). Shift+F5: rebuild with Claude, then run.${s === 'idle' ? '' : `\nNow: ${JOB_WORDS[s]}`}`;
+  document.title = `${JOB_MARK[s] || ''}${TITLE}`;
 }
 /** A run entry's pill: [data-state, text]. A local run killed by a limit says which one. */
 function runPillOf(r) {
@@ -834,6 +867,7 @@ function onChange({ delta, source }) {
   renderSeeds();
   renderBuild();
   updateStatus();
+  renderJob();                                                   // an edit puts the wheel back to idle (done/failed belong to the old rev)
   saveDraft();
   btnUndo.disabled = !ed.canUndo;
   btnRedo.disabled = !ed.canRedo;
@@ -857,8 +891,13 @@ function snapshotPayload(withIntent, intentOverride = null) {
   return out;
 }
 
-/** Run (button, Ctrl+Enter, Doto's "Run it"): on this machine when the runner can run the build, else through Claude. */
-function doRun() {
+/**
+ * Build & run (button, F5, Ctrl+Enter, Doto's menu): one action for both. On this machine when a build in a language the
+ * runner runs is ready (stale or not: it is fast); queued on Claude's build when it is still streaming in such a language;
+ * otherwise through Claude, who builds first when the build is not fresh, then runs. `rebuild` (Shift+F5) always goes to
+ * Claude and asks for a fresh build before the run.
+ */
+function doRun(rebuild = false) {
   if (consentOpen()) return;
   if (lets.status !== 'open') { toast('Not connected to the lets host. Nothing can run.', 'warn', 4000); return; }
   if (!ed.text.trim()) { toast('Nothing to run yet.', 'info', 1800); return; }
@@ -867,25 +906,53 @@ function doRun() {
   makeLocalBuild();
   rescan.cancel();
   updateReach();
+  runWhenBuilt = null;
   const b = build;
+  if (rebuild) { runViaClaude(null, b, reach, true); return; }
   // a line that reaches outside the sandbox (ping, claude.browser, research, $ cmd…) cannot run here: Claude does it for real
   if (reach.length) { runViaClaude(null, b, reach); return; }
-  // a ready build in a language this machine runs (stale or not: it is fast); a build still streaming goes to Claude
+  // Claude's build is still streaming in a language this machine runs: run it the moment it lands, no second round trip
+  if (b && b.status === 'building' && runnableLang(b.lang)) {
+    runWhenBuilt = { rev: b.rev, at: Date.now() };
+    renderJob();
+    toast('Building… it runs here the moment the build lands.', 'info', 2400);
+    return;
+  }
+  // a ready build in a language this machine runs (stale or not: it is fast)
   const lang = b && b.status === 'ready' && b.code.trim() ? runnableLang(b.lang) : '';
   if (!lang) { runViaClaude(); return; }
   if (!runner.allowed) { openConsent(); return; }
   runLocal(b, lang);
 }
-/** Today's path: cocode.run to Claude with the latest build; Claude streams cocode.output into the entry. `r` reuses an entry the runner handed over.
- * `rc` are the lines that reach outside the sandbox (§10): the entry says so, and the event carries them so Claude does each one for real. */
-function runViaClaude(r = null, b = build, rc = []) {
-  if (!r) { r = runEntry(b); if (rc.length) { r.reaches = rc.length; r.system += `${plural(rc.length, 'line reaches', 'lines reach')} outside the sandbox: Claude does ${rc.length === 1 ? 'it' : 'them'} for real.\n`; } addRun(r); }
+/** The queued run (Build & run pressed mid-build): Claude's build for that rev just landed ready. */
+function runQueued() {
+  const q = runWhenBuilt;
+  runWhenBuilt = null;
+  if (!q || Date.now() - q.at > QUEUE_MS || !build || build.status !== 'ready' || !build.code.trim()) { renderJob(); return; }
+  const lang = runnableLang(build.lang);
+  if (!lang) { runViaClaude(); return; }
+  if (!runner.allowed) { renderJob(); openConsent(); return; }       // the wheel leaves "building" while the card asks
+  runLocal(build, lang);
+}
+/** Through Claude: cocode.run with the latest build; Claude streams cocode.output into the entry. `r` reuses an entry the runner handed over.
+ * `rc` are the lines that reach outside the sandbox (§10): the entry says so, and the event carries them so Claude does each one for real.
+ * `rebuild` asks Claude for a fresh build before the run even when the build is current. */
+function runViaClaude(r = null, b = build, rc = [], rebuild = false) {
+  if (!r) {
+    r = runEntry(b);
+    if (rc.length) { r.reaches = rc.length; r.system += `${plural(rc.length, 'line reaches', 'lines reach')} outside the sandbox: Claude does ${rc.length === 1 ? 'it' : 'them'} for real.\n`; }
+    if (rebuild) r.system += `Claude rebuilds for rev ${ed.rev} first, then runs.\n`;
+    else if (!b || b.rev !== ed.rev || b.status !== 'ready') r.system += `Claude builds for rev ${ed.rev} first, then runs.\n`;
+    addRun(r);
+  }
   armLost(r);
   const payload = { run: r.id, rev: ed.rev, text: ed.text.slice(0, TEXT_MAX), lang: L.name };
   if (b) payload.build = { rev: b.rev, lang: b.lang, code: b.code, status: b.status, source: b.source };
   if (rc.length) payload.reach = rc.slice(0, REACH_MAX).map(({ line, kind, name, args, raw }) => ({ line, kind, name, args, raw }));
+  if (rebuild) payload.rebuild = true;
   lets.emitNow('cocode.run', payload);
   recordRecent();
+  renderJob();
   awayToast('Doto is away. The run starts with your next message in Claude Code.');
 }
 
@@ -1004,7 +1071,9 @@ const COMMANDS = {
     lastClaude = { rev, status };
     renderBuild();
     if (status === 'ready' && was !== 'ready' && (d.seq == null || d.done)) react('nod');
-    if (status === 'failed') openPane('build');
+    if (status === 'failed') { openPane('build'); if (runWhenBuilt) { runWhenBuilt = null; renderJob(); toast('The build failed, so nothing ran. See the Build pane.', 'warn', 4000); } }
+    // Build & run was pressed while this build streamed: run it now
+    if (runWhenBuilt && status === 'ready' && (d.seq == null || d.done)) runQueued();
   },
   'cocode.output': (d) => {
     const id = String(d.run || '').slice(0, 60);
@@ -1154,7 +1223,7 @@ function quickSuggestions() {
   return [
     { id: 'cocode.finish', label: 'Finish this', hint: 'a ghost at the caret', run: () => once('cocode.finish', () => requestGhost('menu')) },
     { id: 'cocode.explain', label: sel ? 'Explain the selection' : 'Explain this line', run: () => once('cocode.explain', () => sendAsk(sel ? 'Explain the selection' : `Explain line ${ed.getCursor().line}`, 'menu')) },
-    { id: 'cocode.run', label: 'Run it', hint: 'Ctrl+Enter', run: () => once('cocode.run', doRun) },
+    { id: 'cocode.run', label: 'Build & run', hint: 'F5', run: () => once('cocode.run', () => doRun()) },
     { id: 'cocode.build', label: 'Show the real code', run: () => once('cocode.build', () => { openPane('build'); if (!build) requestBuild('auto'); }) },
     { id: 'cocode.answer', label: 'Answer in code', hint: `the whole answer as ${L.name}`, run: () => once('cocode.answer', answerInCode) },
     { id: 'cocode.chat', label: 'Open chat', run: () => once('cocode.chat', () => { try { shell.chat?.open?.(); } catch { /* optional */ } }) },
@@ -1231,6 +1300,7 @@ function onKeyDown(e) {
   const t = e.target instanceof Element ? e.target : null;
   const mod = e.ctrlKey || e.metaKey;
   if (e.key === 'Escape') { if (closeOverlays()) e.preventDefault(); return; }
+  if (e.key === 'F5') { e.preventDefault(); if (consentOpen()) return; doRun(e.shiftKey); return; }   // F5: build & run; Shift+F5: rebuild with Claude first. Never a page reload.
   if (consentOpen()) { if (mod && e.key === 'Enter') e.preventDefault(); return; }   // the card is modal: only its buttons and Esc
   if (mod && e.key === 'Enter') { e.preventDefault(); if (e.shiftKey) sendToClaude(); else doRun(); return; }
   if (mod && e.shiftKey && !e.altKey && e.key.toLowerCase() === 'o') { e.preventDefault(); answerInCode(); return; }
@@ -1280,7 +1350,7 @@ $('toolbar').addEventListener('click', (e) => {
   if (!b || b.disabled) return;
   switch (b.dataset.act) {
     case 'suggest': requestGhost('toolbar'); break;
-    case 'run': doRun(); break;
+    case 'run': doRun(e.shiftKey); break;
     case 'ask': if (askForm.hidden) openAsk(); else closeAsk(); break;
     case 'send': sendToClaude(); break;
     case 'answer': answerInCode(); break;

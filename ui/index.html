@@ -34,9 +34,9 @@
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h9"/><path d="m11 8 4 4-4 4"/><path d="M17 7v10" stroke-dasharray="2 2"/></svg>
           <span>Suggest</span>
         </button>
-        <button type="button" class="tb-btn tb-text" id="btn-run" data-act="run" title="Run the real program (Ctrl+Enter)" aria-label="Run">
-          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 5.5v13l11-6.5z"/></svg>
-          <span>Run</span>
+        <button type="button" class="tb-btn tb-text tb-run" id="btn-run" data-act="run" data-state="idle" title="Build &amp; run (F5 · Ctrl+Enter). Shift+F5: rebuild with Claude, then run." aria-label="Build and run">
+          <span class="run-ind" id="run-ind" data-state="idle" aria-hidden="true"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 5.5v13l11-6.5z"/></svg></span>
+          <span>Build &amp; run</span>
         </button>
         <button type="button" class="tb-btn tb-text" id="btn-ask" data-act="ask" aria-expanded="false" aria-controls="ask" title="Ask Claude about this line or selection (Ctrl+K)" aria-label="Ask Claude">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 5.5h14a1.5 1.5 0 0 1 1.5 1.5v8.5A1.5 1.5 0 0 1 19 17h-7l-4.5 3.5V17H5a1.5 1.5 0 0 1-1.5-1.5V7A1.5 1.5 0 0 1 5 5.5z"/><path d="M10 9.4a2 2 0 1 1 2.6 1.9c-.4.2-.6.5-.6.9v.4M12 14.3v.1"/></svg>
@@ -193,7 +193,8 @@
       <dt>Alt+] · Alt+[</dt><dd>next · previous alternative</dd>
       <dt>Esc</dt><dd>dismiss the ghost, then close things</dd>
       <dt>Alt+\</dt><dd>ask for a ghost now</dd>
-      <dt>Ctrl+Enter</dt><dd>run the real program</dd>
+      <dt>F5 · Ctrl+Enter</dt><dd>build &amp; run (the wheel in the button: spinning = building or running, ✓ done, ✗ failed, ? no answer)</dd>
+      <dt>Shift+F5</dt><dd>rebuild with Claude first, then run</dd>
       <dt>ping(host) · claude.browser(url)</dt><dd>a reach: Claude does it for real when you Run (also research, search, agent, shell, say)</dd>
       <dt>Ctrl+K</dt><dd>ask about this line or selection</dd>
       <dt>?? …</dt><dd>a line starting with ?? asks when you press Enter</dd>

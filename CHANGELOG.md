@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.4.0 — 2026-10-18
+
+Build & run in one press, with a wheel that says where the job is.
+
+- **One action.** The toolbar's *Run* is now **Build & run** (`F5`, `Ctrl+Enter`, Doto's menu): a ready build in a language this machine runs executes at once; a build Claude is still streaming in such a language is **waited for and run the moment it lands**, without a second round trip (`runWhenBuilt`, dropped after 60 s or on a failed build); anything else goes through Claude, who builds first when the build is not fresh, and the run entry says so (*Claude builds for rev N first, then runs.*). **`Shift+F5`** (or Shift-click) is *rebuild with Claude, then run*: `cocode.run` carries **`rebuild: true`** and Claude builds anew even when the build is current.
+- **The wheel.** The button's icon is the job's state: the play triangle when idle, a spinning ring while building or running (teal for building, cyan for running, a slow amber ring while a run waits for Claude because Doto is away), **✓** when the last run of this text ended with exit 0, **✗** when it failed (or the build failed), **?** when it has had no answer for 60 s. An edit (a new rev) puts it back to idle. The tab title carries the same mark (`⟳ Cocode — lets`, `✓ …`, `✗ …`) so a hidden pane still tells. The button's label and tooltip name the state for screen readers; reduced motion shows a dashed ring instead of the spin.
+- **Guide:** on a `cocode.run` whose build is not fresh (or with `rebuild`), send `cocode.build {status:"building"}` at once so the wheel shows building, then build and run. `F5` never reloads the page.
+
 ## 0.3.1 — 2026-10-15
 
 Reach in any spelling. The 0.3.0 scanner knew `ping(host)` and `ping google.com`; a human writing pseudo-code or an invented language says it in more ways, and some in words no regex knows.
